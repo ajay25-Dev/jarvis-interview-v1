@@ -419,7 +419,7 @@ function ExercisesPageContent() {
                                       if (currentExerciseSet.id) params.set('exercise_id', currentExerciseSet.id);
                                       if (question.id) params.set('question_id', question.id);
                                       const query = params.toString();
-                                      return `http://localhost:3004/problem-solving/practice${query ? `?${query}` : ''}`;
+                                      return `/problem-solving/practice${query ? `?${query}` : ''}`;
                                     })()}
                                   >
                                     <Code2 className="w-4 h-4" />
