@@ -174,7 +174,6 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = resolveUserId(request);
     const url = new URL(request.url);
     const questionIdParam = url.searchParams.get('question_id');
 

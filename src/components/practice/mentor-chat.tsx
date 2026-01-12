@@ -9,7 +9,6 @@ import {
   Send,
   ChevronDown,
   ChevronUp,
-  Trash2,
   Lightbulb,
   Loader,
 } from 'lucide-react';
@@ -117,12 +116,6 @@ export function MentorChat({
     handleSendMessage(suggestion);
   };
 
-  const handleClearHistory = () => {
-    if (confirm('Clear all chat messages?')) {
-      setMessages([]);
-    }
-  };
-
   return (
     <Card className="flex flex-col h-[525px] border-l">
       {/* Header */}
@@ -196,7 +189,9 @@ export function MentorChat({
           </div>
         ) : (
           <div className="space-y-4">
-            {messages.map((msg, idx) => (
+            {messages.map((msg, idx) => {
+              const timestamp = formatTimestamp(msg.created_at ?? undefined);
+              return (
               <div key={idx} className="space-y-1">
                 <div
                   className={`flex gap-3 ${msg.role === 'student' ? 'justify-end' : 'justify-start'}`}
@@ -230,7 +225,7 @@ export function MentorChat({
                     )}
                   </div>
                 </div>
-                {formatTimestamp(msg.created_at) && (
+                {timestamp && (
                   <div
                     className={`flex ${msg.role === 'student' ? 'justify-end' : 'justify-start'}`}
                   >
@@ -239,12 +234,12 @@ export function MentorChat({
                         msg.role === 'student' ? 'text-blue-400' : 'text-gray-500'
                       }`}
                     >
-                      {formatTimestamp(msg.created_at)}
+                      {timestamp}
                     </p>
                   </div>
                 )}
               </div>
-            ))}
+            )})}
             {isSending && (
               <div className="flex gap-3 justify-start">
                 <div className="bg-gray-100 text-gray-900 rounded-lg rounded-bl-none p-3 text-sm">

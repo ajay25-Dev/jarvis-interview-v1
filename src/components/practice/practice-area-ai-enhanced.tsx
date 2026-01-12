@@ -24,8 +24,6 @@ import {
 
   ChevronRight,
 
-  MessageCircle,
-
   Loader2,
 
   AlertCircle,
@@ -40,7 +38,7 @@ import ReactMarkdown from 'react-markdown';
 
 import { toast } from 'sonner';
 
-import { CodeExecutor, buildDatasetSignature, type SqlTablePreview } from './code-executor';
+import { CodeExecutor, type SqlTablePreview } from './code-executor';
 
 import { MentorChat } from './mentor-chat';
 
@@ -156,122 +154,37 @@ const parseQuestionSections = (value = ''): ParsedQuestionSections => {
 
 
 
-type CreationSchema = {
+type ExecutionPayload = {
+  aiEvaluation?: {
+    verdict?: string;
+    feedback?: string;
+    raw_response?: unknown;
+  };
+  verdict?: string;
+  feedback?: string;
+  raw_response?: unknown;
+  rawResponse?: unknown;
+  [key: string]: unknown;
+};
 
-  table: string;
-
-  columns: Array<{ name: string; definition: string }>;
-
+type SubmissionHistoryRecord = {
+  id?: string;
+  attempt_number?: number;
+  attemptNumber?: number;
+  execution_result?: unknown;
+  is_correct?: boolean;
+  feedback?: string;
+  user_answer?: string;
+  created_at?: string;
 };
 
 
-
-const splitColumnDefs = (columnsText: string) => {
-
-  const parts: string[] = [];
-
-  let depth = 0;
-
-  let buffer = '';
-
-
-
-  for (const char of columnsText) {
-
-    if (char === '(') {
-
-      depth += 1;
-
-    } else if (char === ')') {
-
-      depth -= 1;
-
-    }
-
-
-
-    if (char === ',' && depth === 0) {
-
-      if (buffer.trim()) {
-
-        parts.push(buffer.trim());
-
-      }
-
-      buffer = '';
-
-      continue;
-
-    }
-
-
-
-    buffer += char;
-
-  }
-
-
-
-  if (buffer.trim()) {
-
-    parts.push(buffer.trim());
-
-  }
-
-
-
-  return parts;
-
+const getHistoryRecordId = (record: SubmissionHistoryRecord, index: number) => {
+  if (record?.id) return String(record.id);
+  if (record?.attempt_number !== undefined) return String(record.attempt_number);
+  if (record?.attemptNumber !== undefined) return String(record.attemptNumber);
+  return `attempt-${index}`;
 };
-
-
-
-const extractCreationSchemas = (sql?: string): CreationSchema[] => {
-
-  if (!sql) return [];
-
-  const regex =
-
-    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["'`]?([\w$]+)["'`]?\s*\(([\s\S]*?)\)/gi;
-
-  const schemas: CreationSchema[] = [];
-
-  let match;
-
-
-
-  while ((match = regex.exec(sql)) !== null) {
-
-    const table = match[1];
-
-    const columnsBlock = match[2];
-
-    const columns = splitColumnDefs(columnsBlock).map((colDef) => {
-
-      const [name, ...rest] = colDef.split(/\s+/);
-
-      return {
-
-        name: name.replace(/["'`]/g, ''),
-
-        definition: rest.join(' ').trim(),
-
-      };
-
-    });
-
-    schemas.push({ table, columns });
-
-  }
-
-
-
-  return schemas;
-
-};
-
-const getHistoryRecordId = (record: any, index: number) =>
-  record?.id ?? record?.attempt_number ?? record?.attemptNumber ?? `attempt-${index}`;
 
 
 
@@ -292,6 +205,7 @@ const getDifficultyBadgeClass = (value?: string) => {
 
 
 const TEXT_ONLY_SUBJECTS = ['google_sheets', 'statistics', 'power_bi'] as const;
+type TextOnlySubject = (typeof TEXT_ONLY_SUBJECTS)[number];
 
 
 
@@ -367,8 +281,6 @@ export function PracticeAreaAIEnhanced({
 
   const [userCode, setUserCode] = useState('');
 
-  const [showDataset, setShowDataset] = useState(false);
-
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [submissionResult, setSubmissionResult] = useState<ExecutionResult | AISubmissionResult | null>(null);
@@ -379,37 +291,24 @@ export function PracticeAreaAIEnhanced({
 
   const [showMentorChat, setShowMentorChat] = useState(false);
 
-  const [isResultsExpanded, setIsResultsExpanded] = useState(true);
+  const isResultsExpanded = true;
 
-  const [aiEvaluationEnabled, setAiEvaluationEnabled] = useState(true);
+  const aiEvaluationEnabled = true;
 
-  const [aiHintsEnabled, setAiHintsEnabled] = useState(true);
+  const aiHintsEnabled = true;
 
   const [sqlTablePreviews, setSqlTablePreviews] = useState<SqlTablePreview[]>([]);
 
   const [duckDbTableNames, setDuckDbTableNames] = useState<string[]>([]);
 
-  const [submissionHistory, setSubmissionHistory] = useState<any[]>([]);
+  const [submissionHistory, setSubmissionHistory] = useState<SubmissionHistoryRecord[]>([]);
 
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const [historyError, setHistoryError] = useState('');
 
-  const [showRawResponse, setShowRawResponse] = useState(false);
-
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
   const historyPrefillRecordId = useRef<string | null>(null);
-  const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
-
-
-
-  const datasetSignature = useMemo(
-
-    () => buildDatasetSignature(datasets, dataCreationSql, exerciseType),
-
-    [datasets, dataCreationSql, exerciseType],
-
-  );
 
 
 
@@ -490,16 +389,18 @@ export function PracticeAreaAIEnhanced({
 
 
   const questionBusinessContext =
+    typeof businessContext === 'string'
+      ? businessContext
+      : typeof currentQuestion?.content?.business_context === 'string'
+      ? currentQuestion.content.business_context
+      : typeof (currentQuestion as { business_context?: string } | null)?.business_context === 'string'
+      ? (currentQuestion as { business_context?: string }).business_context
+      : '';
 
-    businessContext ||
-
-    currentQuestion?.content?.business_context ||
-
-    (currentQuestion as any)?.business_context;
 
 
-
-  const isTextAnswerMode = TEXT_ONLY_SUBJECTS.includes(resolvedExerciseType);
+  const textOnlyType = resolvedExerciseType as PracticeQuestionType & string;
+  const isTextAnswerMode = TEXT_ONLY_SUBJECTS.includes(textOnlyType as TextOnlySubject);
 
   const textAnswerPlaceholder = getTextAnswerPlaceholder(resolvedExerciseType);
 
@@ -598,6 +499,8 @@ export function PracticeAreaAIEnhanced({
     exerciseType,
 
     resolvedQuestionText,
+
+    resolvedExerciseType,
 
   ]);
 
@@ -761,6 +664,28 @@ const handleSubmit = async () => {
 
     if (aiEvaluationEnabled) {
 
+      const topicHierarchy =
+
+        typeof currentQuestion?.content?.topic_hierarchy === 'string'
+
+          ? currentQuestion.content.topic_hierarchy
+
+          : '';
+
+      const futureTopicsRaw =
+
+        Array.isArray(currentQuestion?.content?.future_topics)
+
+          ? currentQuestion?.content?.future_topics
+
+          : [];
+
+      const futureTopics: string[] = futureTopicsRaw
+
+        .map((item) => (typeof item === 'string' ? item : null))
+
+        .filter((item): item is string => Boolean(item));
+
       result = await aiEvaluation({
 
         questionId: currentQuestionId,
@@ -773,9 +698,9 @@ const handleSubmit = async () => {
 
         subject: exerciseType,
 
-        topicHierarchy: currentQuestion?.content?.topic_hierarchy || '',
+        topicHierarchy,
 
-        futureTopics: currentQuestion?.content?.future_topics || [],
+        futureTopics,
 
       });
 
@@ -905,7 +830,9 @@ const handleRequestHint = async () => {
 
   try {
 
-    let hintLevel = 'basic';
+    type HintLevel = 'basic' | 'detailed' | 'partial';
+
+    let hintLevel: HintLevel = 'basic';
 
     
 
@@ -919,7 +846,7 @@ const handleRequestHint = async () => {
 
     if (previousAttempts >= 6) {
 
-      hintLevel = 'partial_solution';
+      hintLevel = 'partial';
 
     } else if (previousAttempts >= 3) {
 
@@ -941,13 +868,35 @@ const handleRequestHint = async () => {
 
       subject: exerciseType,
 
-      topicHierarchy: currentQuestion?.content?.topic_hierarchy || '',
+      topicHierarchy:
 
-      futureTopics: currentQuestion?.content?.future_topics || [],
+        typeof currentQuestion?.content?.topic_hierarchy === 'string'
+
+          ? currentQuestion.content.topic_hierarchy
+
+          : '',
+
+      futureTopics:
+
+        Array.isArray(currentQuestion?.content?.future_topics)
+
+          ? currentQuestion.content.future_topics
+
+              .map((item) => (typeof item === 'string' ? item : null))
+
+              .filter((item): item is string => Boolean(item))
+
+          : [],
 
       currentCode: userCode,
 
-      datasetContext: currentQuestion?.content?.dataset_context || '',
+      datasetContext:
+
+        typeof currentQuestion?.content?.dataset_context === 'string'
+
+          ? currentQuestion.content.dataset_context
+
+          : '',
 
       hintLevel,
 
@@ -1029,15 +978,23 @@ const handleCodeChange = useCallback((newCode: string) => {
 
 
 
-const resolvedDatasetDescription =
+const resolvedDatasetDescription: string =
 
-  datasetDescription ||
+  typeof datasetDescription === 'string'
 
-  currentQuestion?.dataset_description ||
+    ? datasetDescription
 
-  currentQuestion?.content?.dataset_description ||
+    : typeof currentQuestion?.dataset_description === 'string'
 
-  questionSections.raw;
+    ? currentQuestion.dataset_description
+
+    : typeof currentQuestion?.content?.dataset_description === 'string'
+
+    ? currentQuestion.content.dataset_description
+
+    : questionSections.raw ||
+
+      '';
 
 const datasetDefinitionMatches = resolvedDatasetDescription
 
@@ -1045,19 +1002,17 @@ const datasetDefinitionMatches = resolvedDatasetDescription
 
       resolvedDatasetDescription.matchAll(/([A-Za-z0-9_]+)\(([^)]+)\)/g),
 
-    ).map((match) => ({
-
-      name: match[1],
-
-      fields: match[2]
-
-        .split(',')
-
-        .map((field) => field.trim())
-
-        .filter(Boolean),
-
-    }))
+    ).map((match) => {
+      const [, name, fieldsRaw] = match;
+      const fieldsSource = fieldsRaw ?? '';
+      return {
+        name,
+        fields: fieldsSource
+          .split(',')
+          .map((field) => field.trim())
+          .filter(Boolean),
+      };
+    })
 
   : [];
 
@@ -1073,40 +1028,6 @@ const hasDatasetResources =
 
 
 
-console.log("datasets",datasets);
-
-
-
-const creationSchemas = useMemo(() => {
-
-    const schemaMap = new Map<string, CreationSchema>();
-
-    datasets.forEach((ds) => {
-
-      [ds.creation_sql, ds.data_creation_sql].forEach((sql) => {
-
-        extractCreationSchemas(sql).forEach((schema) => {
-
-          const key = `${schema.table}-${schema.columns.length}`;
-
-          if (!schemaMap.has(key)) {
-
-            schemaMap.set(key, schema);
-
-          }
-
-        });
-
-      });
-
-    });
-
-    return Array.from(schemaMap.values());
-
-  }, [datasets]);
-
-
-
   useEffect(() => {
 
     setSqlTablePreviews([]);
@@ -1117,7 +1038,7 @@ const creationSchemas = useMemo(() => {
 
 
 
-  const parseExecutionResult = (value: unknown): Record<string, any> => {
+  const parseExecutionResult = (value: unknown): ExecutionPayload => {
 
     if (!value) return {};
 
@@ -1125,7 +1046,7 @@ const creationSchemas = useMemo(() => {
 
       try {
 
-        return JSON.parse(value);
+        return JSON.parse(value) as ExecutionPayload;
 
       } catch {
 
@@ -1137,7 +1058,7 @@ const creationSchemas = useMemo(() => {
 
     if (typeof value === 'object' && !Array.isArray(value)) {
 
-      return value as Record<string, any>;
+      return value as ExecutionPayload;
 
     }
 
@@ -1158,6 +1079,10 @@ const creationSchemas = useMemo(() => {
 
 
     const record = submissionHistory[0];
+
+    if (!record) {
+      return null;
+    }
 
     const execResult = parseExecutionResult(record.execution_result);
 
@@ -1251,11 +1176,11 @@ const creationSchemas = useMemo(() => {
 
       const data = await response.json();
 
-      const resolveSubmissions = (payload: unknown): any[] => {
+      const resolveSubmissions = (payload: unknown): SubmissionHistoryRecord[] => {
 
         if (Array.isArray(payload)) {
 
-          return payload;
+          return payload as SubmissionHistoryRecord[];
 
         }
 
@@ -1273,7 +1198,7 @@ const creationSchemas = useMemo(() => {
 
           return resolveSubmissions(
 
-            (payload as Record<string, unknown>).submissions,
+            (payload as { submissions?: unknown }).submissions,
 
           );
 
@@ -1291,6 +1216,9 @@ const creationSchemas = useMemo(() => {
 
       if (prefillCodeFromHistory && submissions.length > 0) {
         const firstRecord = submissions[0];
+        if (!firstRecord) {
+          return;
+        }
         const firstRecordId = getHistoryRecordId(firstRecord, 0);
         const selectedAnswer =
           typeof firstRecord?.user_answer === 'string'
@@ -1357,36 +1285,8 @@ const creationSchemas = useMemo(() => {
     aiEvaluationData?.feedback ??
     'No feedback provided.';
 
-  const displayConfidence =
-    aiEvaluationData?.aiEvaluation?.confidence ?? 'High';
-
   const verdictColor =
     displayVerdict === 'Correct' ? 'text-emerald-600' : 'text-rose-600';
-
-  const rawResponseFromResult =
-
-    displayedResult && 'rawResponse' in displayedResult
-
-      ? (displayedResult as AISubmissionResult).rawResponse
-
-      : null;
-
-  const rawResponseFromAI =
-
-    hasAiEval
-
-      ? (displayedResult as AISubmissionResult).aiEvaluation?.raw_response ?? null
-
-      : null;
-
-
-
-
-  useEffect(() => {
-
-    setShowRawResponse(false);
-
-  }, [displayedResult]);
 
 
 
@@ -1956,7 +1856,7 @@ return (
 
                       // Dataset display logic (from original component)
 
-                      let rawData = ds.data;
+                      let rawData: unknown = ds.data;
 
                       if (typeof rawData === 'string') {
 
@@ -1964,7 +1864,7 @@ return (
 
                           rawData = JSON.parse(rawData);
 
-                        } catch (e) {
+                        } catch {
 
                           rawData = [];
 
@@ -1972,35 +1872,37 @@ return (
 
                       }
 
-                      
-
                       let displayColumns = ds.columns || [];
 
                       if (!Array.isArray(rawData) && typeof rawData === 'object' && rawData !== null) {
 
-                        const keys = Object.keys(rawData);
+                        const keys = Object.keys(rawData as Record<string, unknown>);
 
-                        const values = Object.values(rawData);
+                        const values = Object.values(rawData as Record<string, unknown>);
 
-                        
-
-                        const isColumnar = values.length > 0 && values.every(v => Array.isArray(v));
-
-                        
+                        const isColumnar = values.length > 0 && values.every((v) => Array.isArray(v));
 
                         if (isColumnar) {
 
-                           const numRows = (values[0] as any[]).length;
+                           const firstColumn = values[0];
 
-                           const newRows = [];
+                           const numRows = Array.isArray(firstColumn) ? firstColumn.length : 0;
+
+                           const newRows: Record<string, unknown>[] = [];
 
                            for(let i=0; i<numRows; i++) {
 
-                             const row: any = {};
+                             const row: Record<string, unknown> = {};
 
                              keys.forEach((key, colIdx) => {
 
-                               row[key] = (values[colIdx] as any[])[i];
+                               const columnValues = values[colIdx];
+
+                               if (Array.isArray(columnValues)) {
+
+                                 row[key] = columnValues[i];
+
+                               }
 
                              });
 
@@ -2009,8 +1911,6 @@ return (
                            }
 
                            rawData = newRows;
-
-                           
 
                            if (displayColumns.length === 0) {
 
@@ -2026,21 +1926,15 @@ return (
 
                       }
 
-                      
-
-                      const dataIsArray = Array.isArray(rawData);
-
-                      const hasData = dataIsArray && rawData.length > 0;
-
-                      
+                      const hasData = Array.isArray(rawData) && rawData.length > 0;
 
                       if (displayColumns.length === 0 && hasData) {
 
-                         const firstRow = rawData[0];
+                         const firstRow = (rawData as unknown[])[0];
 
                          if (Array.isArray(firstRow)) {
 
-                           displayColumns = firstRow.map((_: any, i: number) => String(i));
+                           displayColumns = firstRow.map((_, i: number) => String(i));
 
                          } else if (typeof firstRow === 'object' && firstRow !== null) {
 
@@ -2049,10 +1943,6 @@ return (
                          }
 
                       }
-
-
-
-                      const previewRows = hasData ? rawData.slice(0, 5) : [];
 
 
 
@@ -2170,33 +2060,40 @@ return (
 
                                   <tbody className="divide-y divide-gray-100">
 
-                                    {previewRows.map((row: any, rowIdx: number) => (
+                                    {previewRows.map((row, rowIdx) => {
+                                      const resolveCellValue = (col: string) => {
+                                        if (Array.isArray(row)) {
+                                          const index = Number(col);
+                                          return Number.isNaN(index) ? '' : row[index];
+                                        }
+                                        if (row && typeof row === 'object') {
+                                          return (row as Record<string, unknown>)[col];
+                                        }
+                                        return '';
+                                      };
 
-                                      <tr key={`row-${rowIdx}`} className="hover:bg-gray-50">
+                                      return (
+                                        <tr key={`row-${rowIdx}`} className="hover:bg-gray-50">
 
-                                        {displayColumns.map((col) => (
+                                          {displayColumns.map((col) => (
 
-                                          <td
+                                            <td
 
-                                            key={`${col}-${rowIdx}`}
+                                              key={`${col}-${rowIdx}`}
 
-                                            className="px-3 py-2 text-gray-600 whitespace-nowrap border-r border-gray-100 last:border-0"
+                                              className="px-3 py-2 text-gray-600 whitespace-nowrap border-r border-gray-100 last:border-0"
 
-                                          >
+                                            >
 
-                                            {typeof row === 'object' && row !== null
+                                              {formatDatasetValue(resolveCellValue(col))}
 
-                                              ? formatDatasetValue(row[col])
+                                            </td>
 
-                                              : formatDatasetValue(row)}
+                                          ))}
 
-                                          </td>
-
-                                        ))}
-
-                                      </tr>
-
-                                    ))}
+                                        </tr>
+                                      );
+                                    })}
 
                                   </tbody>
 
@@ -2908,25 +2805,19 @@ return (
                   aiEvaluation?.verdict ||
                   execResult?.verdict ||
                   (record.is_correct ? 'Correct' : 'Incorrect');
-                const feedback =
-                  aiEvaluation?.feedback ||
-                  record.feedback ||
-                  execResult?.feedback ||
-                  'No feedback provided';
                 const timestamp = record.created_at
                   ? new Date(record.created_at).toLocaleString()
                   : 'Timestamp unavailable';
                 const evaluationLabel = aiEvaluation ? 'AI evaluation' : 'Execution result';
+                const submissionPreviewSource =
+                  typeof record?.user_answer === 'string' ? record.user_answer : '';
                 const submissionPreview =
-                  typeof record.user_answer === 'string'
-                    ? record.user_answer.split('\n')[0].slice(0, 120)
-                    : '';
+                  (submissionPreviewSource.split('\n')[0] ?? '').slice(0, 120);
                 const badgeClasses =
                   verdict === 'Correct'
                     ? 'border-emerald-100 bg-emerald-50 text-emerald-600'
                     : 'border-rose-100 bg-rose-50 text-rose-600';
                 const recordId = getHistoryRecordId(record, index);
-                const isExpanded = expandedHistory[recordId] ?? false;
 
                 return (
                   <div key={recordId} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
@@ -2954,39 +2845,11 @@ return (
                         </p>
                         <p className="text-sm text-slate-900">
                           {submissionPreview}
-                          {record.user_answer?.length > 120 ? '...' : ''}
+                          {submissionPreviewSource.length > 120 ? '...' : ''}
                         </p>
                       </div>
                     )}
-                    <div className="mt-3 space-y-1">
-                      <p className="text-[11px] uppercase tracking-[0.3em] text-gray-400">Feedback</p>
-                      <p className="text-sm text-gray-700">{feedback}</p>
-                      {aiEvaluation?.raw_response && (
-                        <div className="mt-1 flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="xs"
-                            className="text-[10px] uppercase tracking-[0.3em]"
-                            onClick={() =>
-                              setExpandedHistory((prev) => ({
-                                ...prev,
-                                [recordId]: !isExpanded,
-                              }))
-                            }
-                          >
-                            {isExpanded ? 'Hide details' : 'Show details'}
-                          </Button>
-                          <span className="text-[10px] text-gray-500">
-                            View the raw AI payload for this submission.
-                          </span>
-                        </div>
-                      )}
-                      {aiEvaluation?.raw_response && isExpanded && (
-                        <pre className="mt-2 max-h-28 overflow-auto rounded-lg border border-gray-100 bg-gray-50 p-3 text-[10px] text-gray-600">
-                          {aiEvaluation.raw_response}
-                        </pre>
-                      )}
-                    </div>
+
                   </div>
                 );
               })}

@@ -8,15 +8,23 @@ const SUPABASE_KEY =
 
 const SUPABASE_CONFIG_READY = Boolean(SUPABASE_URL && SUPABASE_KEY);
 
+interface QuestionContent {
+  hint?: string;
+  business_context?: string;
+  case_study_title?: string;
+  case_study_description?: string;
+  case_study_problem_statement?: string;
+  dataset_context?: string;
+}
+
 interface QuestionRecord {
   id: string;
   text: string;
   difficulty?: string;
   topics?: string[];
-  content?: {
-    hint?: string;
-    business_context?: string;
-  };
+  exercise_id?: number;
+  question_number?: number;
+  content?: QuestionContent;
 }
 
 interface CaseStudyWithQuestion {
@@ -83,7 +91,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const normalizeCaseStudy = (rec: any): CaseStudyWithQuestion => {
+  const normalizeCaseStudy = (rec: QuestionRecord): CaseStudyWithQuestion => {
     const content = rec.content ?? {};
     return {
       question_id: rec.id,

@@ -118,7 +118,8 @@ const parseCsvToObjects = (csv?: string): Record<string, JsonValue>[] => {
     .filter(Boolean);
   if (lines.length === 0) return [];
 
-  const headers = parseCsvLine(lines[0]).map((value, idx) =>
+  const headerLine = lines[0] ?? '';
+  const headers = parseCsvLine(headerLine).map((value, idx) =>
     value.length > 0 ? value : `column_${idx + 1}`,
   );
 
@@ -127,7 +128,7 @@ const parseCsvToObjects = (csv?: string): Record<string, JsonValue>[] => {
   const rows: Record<string, JsonValue>[] = [];
 
   for (let i = 1; i < lines.length; i += 1) {
-    const parsed = parseCsvLine(lines[i]);
+    const parsed = parseCsvLine(lines[i] ?? '');
     const rowRecord: Record<string, JsonValue> = {};
     headers.forEach((header, idx) => {
       const cell = parsed[idx] ?? '';
