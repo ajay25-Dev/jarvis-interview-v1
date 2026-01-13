@@ -54,6 +54,9 @@ function ExercisesPageContent() {
   const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
   const detailSectionRef = useRef<HTMLDivElement | null>(null);
 
+  const isProblemSolvingSubject = (subject?: string) =>
+    subject?.toLowerCase().includes('problem solving');
+
   const normalizeQuestionText = (value?: string) => {
     if (!value) return '';
     const cleaned = value
@@ -192,15 +195,24 @@ function ExercisesPageContent() {
           <div className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               {exercises.map((exerciseSet) => {
+                const isProblemSolving = isProblemSolvingSubject(exerciseSet.subject);
                 const datasetReady =
-                  Boolean(exerciseSet.dataset_description) ||
-                  (exerciseSet.datasets && exerciseSet.datasets.length > 0);
+                  !isProblemSolving &&
+                  (Boolean(exerciseSet.dataset_description) ||
+                    (exerciseSet.datasets && exerciseSet.datasets.length > 0));
                 const isExpanded = expandedSubject === exerciseSet.subject;
-                const truncatedDescription = exerciseSet.dataset_description
-                  ? exerciseSet.dataset_description.length > 140
-                    ? `${exerciseSet.dataset_description.substring(0, 140)}...`
-                    : exerciseSet.dataset_description
-                  : 'Dataset metadata unlocks after your plan syncs.';
+                const truncatedDescription = isProblemSolving
+                  ? ''
+                  : exerciseSet.dataset_description
+                    ? exerciseSet.dataset_description.length > 140
+                      ? `${exerciseSet.dataset_description.substring(0, 140)}...`
+                      : exerciseSet.dataset_description
+                    : 'Dataset metadata unlocks after your plan syncs.';
+                const badgeLabel = isProblemSolving
+                  ? 'Problem solving focus'
+                  : datasetReady
+                    ? 'Dataset ready'
+                    : 'Dataset pending';
 
                 return (
                   <div
@@ -236,46 +248,50 @@ function ExercisesPageContent() {
                             {exerciseSet.questions.length} curated questions
                           </p>
                         </div>
-                        <div className="text-right">
-                          <Badge
-                            variant="secondary"
-                            className={`rounded-full px-3 py-1 text-[11px] ${
-                              datasetReady
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}
-                          >
-                            {datasetReady ? 'Dataset ready' : 'Dataset pending'}
-                          </Badge>
-                          <p className="text-[11px] text-gray-500 mt-1">
-                            {exerciseSet.datasets?.length
-                              ? `${exerciseSet.datasets.length} source${exerciseSet.datasets.length > 1 ? 's' : ''}`
-                              : 'waiting for tables'}
-                          </p>
-                        </div>
+                        {!isProblemSolving && (
+                          <div className="text-right">
+                            <Badge
+                              variant="secondary"
+                              className={`rounded-full px-3 py-1 text-[11px] ${
+                                datasetReady
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {badgeLabel}
+                            </Badge>
+                            <p className="text-[11px] text-gray-500 mt-1">
+                              {exerciseSet.datasets?.length
+                                ? `${exerciseSet.datasets.length} source${exerciseSet.datasets.length > 1 ? 's' : ''}`
+                                : 'waiting for tables'}
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       <div className="space-y-2">
                         <p className="text-sm text-gray-600 leading-relaxed">
                           {truncatedDescription}
                         </p>
-                        {exerciseSet.datasets?.length ? (
-                          <div className="flex flex-wrap gap-2">
-                            {exerciseSet.datasets.map((dataset) => (
-                              <span
-                                key={dataset.name || dataset.table_name || `${exerciseSet.subject}-dataset`}
-                                className="px-3 py-1 rounded-full bg-blue-50 text-[11px] font-semibold text-blue-700 border border-blue-100"
-                              >
-                                {dataset.table_name || dataset.name || 'dataset'}
+                        {!isProblemSolving && (
+                          (exerciseSet.datasets?.length ? (
+                            <div className="flex flex-wrap gap-2">
+                              {exerciseSet.datasets.map((dataset) => (
+                                <span
+                                  key={dataset.name || dataset.table_name || `${exerciseSet.subject}-dataset`}
+                                  className="px-3 py-1 rounded-full bg-blue-50 text-[11px] font-semibold text-blue-700 border border-blue-100"
+                                >
+                                  {dataset.table_name || dataset.name || 'dataset'}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              <span className="px-3 py-1 rounded-full bg-gray-100 text-[11px] font-semibold text-gray-600 border border-gray-200">
+                                Awaiting dataset
                               </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap gap-2">
-                            <span className="px-3 py-1 rounded-full bg-gray-100 text-[11px] font-semibold text-gray-600 border border-gray-200">
-                              Awaiting dataset
-                            </span>
-                          </div>
+                            </div>
+                          ))
                         )}
                       </div>
 
@@ -309,11 +325,12 @@ function ExercisesPageContent() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {(currentExerciseSet.dataset_description ||
-                        currentExerciseSet.datasets?.length ||
-                        currentExerciseSet.dataset_csv ||
-                        currentExerciseSet.data_creation_sql ||
-                        currentExerciseSet.data_creation_python) && (
+                      {!isProblemSolvingSubject(currentExerciseSet.subject) &&
+                        (currentExerciseSet.dataset_description ||
+                          currentExerciseSet.datasets?.length ||
+                          currentExerciseSet.dataset_csv ||
+                          currentExerciseSet.data_creation_sql ||
+                          currentExerciseSet.data_creation_python) && (
                         <div className="space-y-4 mb-4 border border-dashed border-gray-200 rounded-xl bg-white p-4">
                           <h4 className="text-sm font-semibold text-gray-900 uppercase tracking-wide flex items-center gap-2">
                             <BookOpen className="w-4 h-4 text-blue-600" />
