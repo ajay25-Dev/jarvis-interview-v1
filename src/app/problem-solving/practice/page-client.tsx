@@ -289,7 +289,7 @@ export default function ProblemSolvingPracticePage() {
                 </div>
 
                 <div className="space-y-4 text-sm text-gray-700">
-                  {/* <div>
+                  <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.35em] text-gray-500 mb-1">
                       Problem Statement
                     </p>
@@ -298,7 +298,7 @@ export default function ProblemSolvingPracticePage() {
                         currentCase.business_problem ||
                         'Problem statement not provided yet.'}
                     </p>
-                  </div> */}
+                  </div>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.35em] text-gray-500 mb-1">
                       Description

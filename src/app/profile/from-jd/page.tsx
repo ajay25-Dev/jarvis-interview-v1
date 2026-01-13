@@ -13,6 +13,251 @@ import Link from 'next/link';
 
 const EXPERIENCE_LEVELS = ['entry', 'junior', 'mid', 'senior', 'lead'];
 const INDUSTRIES = ['tech', 'finance', 'healthcare', 'education', 'ecommerce', 'other'];
+const INDUSTRY_KEYWORDS: Record<string, string[]> = {
+  finance: ['finance', 'nbfc', 'lending', 'loan', 'credit', 'bank', 'payments', 'personal loan'],
+  healthcare: ['healthcare', 'medical', 'hospital', 'pharma'],
+  education: ['education', 'learning', 'edtech', 'school', 'university'],
+  ecommerce: ['ecommerce', 'retail', 'shopping', 'commerce'],
+  tech: ['tech', 'software', 'developer', 'engineer', 'cloud', 'data'],
+};
+
+function normalizeExperienceLevel(raw?: string) {
+  const lower = raw?.toLowerCase() || '';
+  if (EXPERIENCE_LEVELS.includes(lower)) return lower;
+  if (lower.includes('entry')) return 'entry';
+  if (lower.includes('junior')) return 'junior';
+  if (lower.includes('mid')) return 'mid';
+  if (lower.includes('lead')) return 'lead';
+  if (lower.includes('senior') || lower.includes('principal')) return 'senior';
+  return 'junior';
+}
+
+function detectIndustryFromText(text?: string): string | undefined {
+  if (!text) return undefined;
+  const lower = text.toLowerCase();
+  return Object.entries(INDUSTRY_KEYWORDS).find(([, keywords]) =>
+    keywords.some((keyword) => lower.includes(keyword)),
+  )?.[0];
+}
+
+function normalizeIndustry(raw?: string, fallbackText?: string) {
+  const value = raw?.trim().toLowerCase();
+  if (value) {
+    const match = INDUSTRIES.find((industry) => industry === value);
+    if (match) return match;
+    const detectedFromRaw = detectIndustryFromText(value);
+    if (detectedFromRaw) return detectedFromRaw;
+  }
+
+  const detectedFromText = detectIndustryFromText(fallbackText);
+  if (detectedFromText) return detectedFromText;
+
+  return 'tech';
+}
+
+function buildRoleFromExtract(extracted?: Record<string, any>) {
+  if (!extracted) return '';
+  return (
+    extracted.role_title ||
+    extracted.job_title ||
+    extracted.title ||
+    extracted.role ||
+    extracted.position ||
+    extracted.function ||
+    ''
+  );
+}
+
+function buildCompanyFromExtract(extracted?: Record<string, any>) {
+  if (!extracted) return '';
+  return (
+    extracted.company_name ||
+    extracted.company ||
+    extracted.organisation ||
+    extracted.organization ||
+    extracted.employer ||
+    extracted.client ||
+    ''
+  );
+}
+
+function buildLocationFromExtract(extracted: Record<string, any>) {
+  const location = extracted.location || extracted.locations;
+  if (Array.isArray(location)) {
+    return location[0] || '';
+  }
+  return location || extracted.city || extracted.cities?.[0] || '';
+}
+
+function capitalizeWords(text?: string) {
+  if (!text) return '';
+  return text
+    .split(' ')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function parseRoleFromJDText(text?: string) {
+  if (!text) return '';
+  const firstLine = text.trim().split('\n')[0] || '';
+  if (!firstLine) return '';
+  const cleanedLine = firstLine.replace(/Job Title:/i, '').trim();
+  const segments = cleanedLine
+    .split(/[|–—-]/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  return segments[0] || '';
+}
+
+function parseCompanyFromJDText(text?: string) {
+  if (!text) return '';
+  const firstLine = text.trim().split('\n')[0] || '';
+  const segments = firstLine
+    .split(/[|–—-]/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  if (segments.length > 1) {
+    return segments[1];
+  }
+
+  const matchAbout = text.match(/About\s+([\w\s&.,]+)/i);
+  if (matchAbout) {
+    return matchAbout[1].trim();
+  }
+
+  const matchCompany = text.match(/Company[:\s-]+([^\n]+)/i);
+  if (matchCompany) {
+    return matchCompany[1].trim();
+  }
+
+  return '';
+}
+
+function buildPreviewText(source?: string, maxWords = 60) {
+  if (!source) return '';
+  const normalized = source.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  const words = normalized.split(' ');
+  if (words.length <= maxWords) {
+    return normalized;
+  }
+  return `${words.slice(0, maxWords).join(' ')}...`;
+}
+
+function buildSentencePreview(source?: string, maxSentences = 3, maxWords = 140) {
+  if (!source) return '';
+  const normalized = source.replace(/\r/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  const sentenceMatches = normalized.match(/[^.!?]+[.!?]+/g) || [normalized];
+  const summary = sentenceMatches.slice(0, maxSentences).join(' ').trim();
+  if (!summary) return '';
+  const words = summary.split(' ').filter(Boolean);
+  if (words.length <= maxWords) return summary;
+  return `${words.slice(0, maxWords).join(' ')}...`;
+}
+
+function buildConclusionText(source?: string, maxSentences = 2) {
+  if (!source) return '';
+  const normalized = source.replace(/\r/g, '').trim();
+  if (!normalized) return '';
+
+  const paragraphs = normalized
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+
+  const targetParagraph = paragraphs.length
+    ? paragraphs[paragraphs.length - 1]
+    : normalized;
+
+  const sentenceMatches =
+    targetParagraph.match(/[^.!?]+[.!?]+/g) ||
+    [targetParagraph];
+
+  let conclusionSentences = sentenceMatches
+    .slice(-maxSentences)
+    .join(' ')
+    .trim();
+
+  if (!conclusionSentences) {
+    const lines = normalized
+      .split(/\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    conclusionSentences = lines.slice(-maxSentences).join(' ');
+  }
+
+  if (!conclusionSentences) return '';
+  return limitWords(conclusionSentences, 60);
+}
+
+function extractFirstBulletLine(text?: string) {
+  if (!text) return '';
+  const match = text.match(/(?:•|-|\*)\s*([^\n]+)/m);
+  return match ? match[1].trim().replace(/\.$/, '') : '';
+}
+
+function limitWords(text: string, maxWords = 60) {
+  const words = text.split(' ').filter(Boolean);
+  if (words.length <= maxWords) return text;
+  return `${words.slice(0, maxWords).join(' ')}...`;
+}
+
+function buildShortJDSummary(
+  extracted?: Record<string, any>,
+  source?: string,
+) {
+  const role = buildRoleFromExtract(extracted || undefined);
+  const company = buildCompanyFromExtract(extracted || undefined);
+  const location = extracted ? buildLocationFromExtract(extracted) : '';
+  const experience = extracted?.experience_level;
+  const responsibility =
+    Array.isArray(extracted?.key_responsibilities) && extracted?.key_responsibilities[0]
+      ? extracted.key_responsibilities[0]
+      : extractFirstBulletLine(source);
+  const skillValues = Array.isArray(extracted?.required_skills)
+    ? extracted.required_skills
+    : Array.isArray(extracted?.key_skills)
+    ? extracted.key_skills
+    : undefined;
+  const skillList = skillValues
+    ? skillValues.slice(0, 3).join(', ')
+    : extracted?.required_skills ||
+      extracted?.key_skills ||
+      extracted?.skills ||
+      '';
+
+  const parts: string[] = [];
+  if (role && company) {
+    parts.push(`${role} at ${company}`);
+  } else if (role) {
+    parts.push(role);
+  } else if (company) {
+    parts.push(`Opportunity at ${company}`);
+  }
+
+  if (location) {
+    parts.push(`Based in ${location}`);
+  }
+  if (experience) {
+    parts.push(`${capitalizeWords(experience)} level experience`);
+  }
+
+  if (responsibility) {
+    parts.push(`Focuses on ${responsibility}`);
+  }
+  if (skillList) {
+    parts.push(`Skills: ${skillList}`);
+  }
+
+  const summary = parts.filter(Boolean).join('. ');
+  if (!summary) {
+    return '';
+  }
+
+  return limitWords(summary, 140);
+}
 
 function ProfileFromJDContent() {
   const router = useRouter();
@@ -23,6 +268,7 @@ function ProfileFromJDContent() {
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState('');
   const [jdContent, setJdContent] = useState('');
+  const [extractedDetails, setExtractedDetails] = useState<Record<string, any> | null>(null);
 
   const [formData, setFormData] = useState({
     email: '',
@@ -34,6 +280,31 @@ function ProfileFromJDContent() {
     company_name: '',
     notes: '',
   });
+
+  const previewSource = extractedDetails?.job_description || jdContent;
+  const shortSummary = buildShortJDSummary(extractedDetails || undefined, previewSource);
+  const previewText =
+    shortSummary || buildSentencePreview(previewSource, 3, 140);
+  const conclusionText = buildConclusionText(previewSource, 2);
+  const parsedRoleFromPreview = parseRoleFromJDText(previewSource);
+  const parsedCompanyFromPreview = parseCompanyFromJDText(previewSource);
+  const summaryRole =
+    extractedDetails?.role_title ||
+    buildRoleFromExtract(extractedDetails || undefined) ||
+    formData.target_role ||
+    parsedRoleFromPreview ||
+    'Not detected';
+  const summaryCompany =
+    buildCompanyFromExtract(extractedDetails || undefined) ||
+    formData.company_name ||
+    parsedCompanyFromPreview ||
+    'Not detected';
+  const summaryIndustry =
+    capitalizeWords(extractedDetails?.industry || formData.industry) || 'Not detected';
+  const summaryExperience =
+    capitalizeWords(extractedDetails?.experience_level || formData.experience_level) || 'Not detected';
+  const summaryLocation =
+    (extractedDetails ? buildLocationFromExtract(extractedDetails) : '') || 'Not detected';
 
   // Fetch JD and extract data on mount
   useEffect(() => {
@@ -70,18 +341,29 @@ function ProfileFromJDContent() {
         }
 
         const extracted = await extractResponse.json();
+        setExtractedDetails(extracted);
+
+        const fallbackRole = parseRoleFromJDText(jdText);
+        const fallbackCompany = parseCompanyFromJDText(jdText);
+
+        const extractedRole = buildRoleFromExtract(extracted);
+        const extractedCompany = buildCompanyFromExtract(extracted);
+        const extractedSkills = Array.isArray(extracted.required_skills)
+          ? extracted.required_skills.join(', ')
+          : extracted.required_skills || '';
+        const notesFromJD = extracted.job_description
+          ? `Extracted from JD: ${extracted.job_description.substring(0, 120)}...`
+          : '';
 
         // Auto-fill form with extracted data
         setFormData(prev => ({
           ...prev,
-          target_role: extracted.job_title || extracted.title || '',
-          experience_level: extracted.experience_level?.toLowerCase() || 'junior',
-          industry: extracted.industry?.toLowerCase() || 'tech',
-          current_skills: Array.isArray(extracted.required_skills) 
-            ? extracted.required_skills.join(', ') 
-            : (extracted.required_skills || ''),
-          company_name: extracted.company_name || extracted.company || '',
-          notes: extracted.job_description ? `Extracted from: ${extracted.job_description.substring(0, 100)}...` : '',
+          target_role: extractedRole || fallbackRole || prev.target_role,
+          experience_level: normalizeExperienceLevel(extracted.experience_level),
+          industry: normalizeIndustry(extracted.industry, jdText),
+          current_skills: extractedSkills || prev.current_skills,
+          company_name: extractedCompany || fallbackCompany || prev.company_name,
+          notes: notesFromJD || prev.notes,
         }));
       } catch (err) {
         console.error('Error:', err);
@@ -178,8 +460,34 @@ function ProfileFromJDContent() {
               We've extracted some information from the job description. Review and complete your profile.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
+      <CardContent>
+        {extractedDetails && (
+          <div className="mb-6 rounded-2xl border border-gray-200 bg-white/70 p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Job snapshot
+            </p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <SummaryStat label="Role" value={summaryRole} />
+              <SummaryStat label="Company" value={summaryCompany} />
+              <SummaryStat label="Industry" value={summaryIndustry} />
+              <SummaryStat label="Experience level" value={summaryExperience} />
+              <SummaryStat label="Location" value={summaryLocation} />
+            </div>
+            {previewText && (
+              <p className="mt-4 text-sm text-gray-600">
+                <span className="font-semibold text-gray-900">Preview:</span>{' '}
+                {previewText}
+              </p>
+            )}
+            {conclusionText && (
+              <p className="mt-3 text-sm text-gray-500">
+                <span className="font-semibold text-gray-900">Conclusion:</span>{' '}
+                {conclusionText}
+              </p>
+            )}
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="space-y-6">
               {/* Email & Role */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
@@ -321,6 +629,15 @@ function ProfileFromJDContent() {
           </CardContent>
         </Card>
       </main>
+    </div>
+  );
+}
+
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs text-gray-500">{label}</p>
+      <p className="text-sm font-semibold text-gray-900 break-words">{value}</p>
     </div>
   );
 }
