@@ -426,14 +426,16 @@ const DomainKnowledgeMarkdown = ({ text }: { text: string }) => (
                       <div className="border-t border-gray-200 bg-gray-50">
                         <div className="p-6 space-y-8">
                           {/* Subject Actions */}
-                          <div className="flex justify-end">
-                          <Link href={buildExercisesHref(subject)}>
-                            <Button className="bg-blue-600 hover:bg-blue-700 text-white">
-                              Start {subject} Practice
-                              <ArrowLeft className="w-4 h-4 ml-2 rotate-180" />
-                              </Button>
-                            </Link>
-                          </div>
+                          {subject?.trim().toLowerCase() !== 'domain knowledge' && (
+                            <div className="flex justify-end">
+                              <Link href={buildExercisesHref(subject)}>
+                                <Button className="bg-blue-600 hover:bg-blue-700 text-white">
+                                  Start {subject} Practice
+                                  <ArrowLeft className="w-4 h-4 ml-2 rotate-180" />
+                                </Button>
+                              </Link>
+                            </div>
+                          )}
 
                           {headerText && (
                             <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-sm text-gray-700">
@@ -634,11 +636,11 @@ const DomainKnowledgeMarkdown = ({ text }: { text: string }) => (
                                           </Badge>
                                         )}
                                       </div>
-                                      {answerSnippet && (
+                                      {/* {answerSnippet && (
                                         <pre className="text-xs bg-gray-900 text-white p-3 rounded-lg overflow-x-auto whitespace-pre-wrap">
                                           {answerSnippet}
                                         </pre>
-                                      )}
+                                      )} */}
                                     </div>
                                   );
                                 })}

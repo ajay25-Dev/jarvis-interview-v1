@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -53,6 +53,7 @@ function ExercisesPageContent() {
   const [error, setError] = useState('');
   const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
   const [expandedQuestion, setExpandedQuestion] = useState<string | null>(null);
+  const detailSectionRef = useRef<HTMLDivElement | null>(null);
 
   const normalizeQuestionText = (value?: string) => {
     if (!value) return '';
@@ -123,6 +124,19 @@ function ExercisesPageContent() {
     }
   }, [exercises, subjectParam, planIdParam]);
 
+  useEffect(() => {
+    if (!expandedSubject) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      detailSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [expandedSubject]);
+
+  const solveButtonClassName =
+    'gap-2 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg shadow-blue-200/70 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white';
+
   const getDifficultyColor = (difficulty: string) => {
     const lower = difficulty.toLowerCase();
     if (lower.includes('beginner') || lower.includes('easy')) return 'bg-green-100 text-green-800';
@@ -177,72 +191,115 @@ function ExercisesPageContent() {
           </Card>
         ) : (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {exercises.map((exerciseSet) => (
-                <Card
-                  key={exerciseSet.id || exerciseSet.subject}
-                  className="hover:shadow-lg transition-shadow cursor-pointer"
-                  onClick={() =>
-                    setExpandedSubject(
-                      expandedSubject === exerciseSet.subject ? null : exerciseSet.subject
-                    )
-                  }
-                >
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="flex items-center gap-2">
-                          <Code2 className="w-5 h-5 text-primary" />
-                          {exerciseSet.subject}
-                        </CardTitle>
-                        <CardDescription>
-                          {exerciseSet.questions.length} questions
-                        </CardDescription>
-                      </div>
-                      {exerciseSet.dataset_description && (
-                        <Badge variant="secondary">Dataset</Badge>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {exerciseSet.dataset_description ? (
-                        <p className="text-sm text-gray-600">
-                          <span className="font-medium">Dataset:</span>{' '}
-                          {exerciseSet.dataset_description.length > 120
-                            ? `${exerciseSet.dataset_description.substring(0, 120)}...`
-                            : exerciseSet.dataset_description}
-                        </p>
-                      ) : (
-                        <p className="text-sm text-gray-600">
-                          Dataset information becomes available after generating the plan.
-                        </p>
-                      )}
-                      {exerciseSet.datasets?.length ? (
-                        <div className="flex flex-wrap gap-2">
-                          {exerciseSet.datasets.map((dataset) => (
-                            <Badge key={dataset.name || dataset.table_name} variant="outline" className="text-xs">
-                              {dataset.table_name || dataset.name || 'dataset'}
-                            </Badge>
-                          ))}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {exercises.map((exerciseSet) => {
+                const datasetReady =
+                  Boolean(exerciseSet.dataset_description) ||
+                  (exerciseSet.datasets && exerciseSet.datasets.length > 0);
+                const isExpanded = expandedSubject === exerciseSet.subject;
+                const truncatedDescription = exerciseSet.dataset_description
+                  ? exerciseSet.dataset_description.length > 140
+                    ? `${exerciseSet.dataset_description.substring(0, 140)}...`
+                    : exerciseSet.dataset_description
+                  : 'Dataset metadata unlocks after your plan syncs.';
+
+                return (
+                  <div
+                    key={exerciseSet.id || exerciseSet.subject}
+                  className={`group relative overflow-hidden rounded-2xl border bg-white/80 shadow-sm transition duration-200 ${
+                      isExpanded
+                        ? 'border-blue-300 shadow-lg'
+                        : 'border-gray-200 hover:shadow-xl'
+                    }`}
+                  >
+                    <div
+                      className="absolute inset-0 -z-10 bg-gradient-to-br from-blue-500/5 to-indigo-500/5 opacity-0 transition group-hover:opacity-100"
+                      aria-hidden="true"
+                    />
+                    <div
+                      onClick={() =>
+                        setExpandedSubject(
+                          isExpanded ? null : exerciseSet.subject
+                        )
+                      }
+                      className="cursor-pointer space-y-4 px-6 py-6 lg:px-8"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">
+                            Practice Focus
+                          </p>
+                          <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                            <Code2 className="w-5 h-5 text-primary" />
+                            {exerciseSet.subject}
+                          </h3>
+                          <p className="text-sm text-gray-500">
+                            {exerciseSet.questions.length} curated questions
+                          </p>
                         </div>
-                      ) : null}
-                      <p className="text-xs text-gray-500">
-                        Click to expand and review questions, dataset resources, and solutions.
-                      </p>
+                        <div className="text-right">
+                          <Badge
+                            variant="secondary"
+                            className={`rounded-full px-3 py-1 text-[11px] ${
+                              datasetReady
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            {datasetReady ? 'Dataset ready' : 'Dataset pending'}
+                          </Badge>
+                          <p className="text-[11px] text-gray-500 mt-1">
+                            {exerciseSet.datasets?.length
+                              ? `${exerciseSet.datasets.length} source${exerciseSet.datasets.length > 1 ? 's' : ''}`
+                              : 'waiting for tables'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-sm text-gray-600 leading-relaxed">
+                          {truncatedDescription}
+                        </p>
+                        {exerciseSet.datasets?.length ? (
+                          <div className="flex flex-wrap gap-2">
+                            {exerciseSet.datasets.map((dataset) => (
+                              <span
+                                key={dataset.name || dataset.table_name || `${exerciseSet.subject}-dataset`}
+                                className="px-3 py-1 rounded-full bg-blue-50 text-[11px] font-semibold text-blue-700 border border-blue-100"
+                              >
+                                {dataset.table_name || dataset.name || 'dataset'}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            <span className="px-3 py-1 rounded-full bg-gray-100 text-[11px] font-semibold text-gray-600 border border-gray-200">
+                              Awaiting dataset
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs text-gray-500 uppercase tracking-wide">
+                        <span>Tap to expand</span>
+                        <span className="text-xs font-semibold text-primary">
+                          {isExpanded ? 'Hide details' : 'View dataset & questions'}
+                        </span>
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Expanded Questions View */}
-            {expandedSubject && (() => {
-              const currentExerciseSet = exercises.find((e) => e.subject === expandedSubject);
-              if (!currentExerciseSet) return null;
+              {expandedSubject && (() => {
+                const currentExerciseSet = exercises.find((e) => e.subject === expandedSubject);
+                if (!currentExerciseSet) return null;
 
               return (
-                <Card>
+                <div ref={detailSectionRef}>
+                  <Card>
                   <CardHeader>
                     <CardTitle>
                       {currentExerciseSet.subject} - Questions
@@ -410,7 +467,7 @@ function ExercisesPageContent() {
                                 <Button
                                   size="sm"
                                   asChild
-                                  className="gap-2"
+                                  className={solveButtonClassName}
                                 >
                                   <a
                                     href={(() => {
@@ -428,13 +485,13 @@ function ExercisesPageContent() {
                                 </Button>
                               ) : (
                                 <Link href={`/practice/${currentExerciseSet.id}/question/${question.id}`}>
-                                  <Button size="sm" className="gap-2">
+                                  <Button size="sm" className={solveButtonClassName}>
                                     <Code2 className="w-4 h-4" />
                                     Solve
                                   </Button>
                                 </Link>
                               )}
-                              <button
+                              {/* <button
                                 onClick={() =>
                                   setExpandedQuestion(
                                     expandedQuestion === question.id ? null : question.id
@@ -443,7 +500,7 @@ function ExercisesPageContent() {
                                 className="text-sm text-primary hover:underline font-medium px-3 py-2"
                               >
                                 {expandedQuestion === question.id ? 'Hide Details' : 'Show Answer & Details'}
-                              </button>
+                              </button> */}
                             </div>
 
                             {expandedQuestion === question.id && (
@@ -490,7 +547,8 @@ function ExercisesPageContent() {
                       ))}
                     </div>
                   </CardContent>
-                </Card>
+                  </Card>
+                </div>
               );
             })()}
           </div>

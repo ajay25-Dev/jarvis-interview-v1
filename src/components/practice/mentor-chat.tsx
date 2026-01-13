@@ -52,13 +52,6 @@ export function MentorChat({
     setMessages(initialMessages);
   }, [initialMessages]);
 
-  const suggestions = [
-    'Can you explain this concept?',
-    'What approach should I use?',
-    'Can you give me a hint?',
-    'What is the optimal solution?',
-  ];
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -168,24 +161,9 @@ export function MentorChat({
               Start a conversation
             </h3>
             <p className="text-xs text-gray-600 mb-4">
-              Ask the mentor for help with this question
+              Start solving your case study with help from the mentor: describe what you're working on,
+              where you're stuck, and how you'd like to improve your approach.
             </p>
-
-            {/* Suggestions */}
-            {messages.length === 0 && (
-              <div className="space-y-2">
-                {suggestions.map((suggestion, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleSuggestionClick(suggestion)}
-                    className="w-full px-3 py-2 text-xs text-left bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors text-gray-700 flex items-center gap-2"
-                  >
-                    <Lightbulb className="w-3 h-3 text-blue-600 flex-shrink-0" />
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         ) : (
           <div className="space-y-4">
