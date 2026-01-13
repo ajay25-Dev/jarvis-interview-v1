@@ -52,7 +52,6 @@ function ExercisesPageContent() {
   const [exercises, setExercises] = useState<PracticeExerciseSet[]>([]);
   const [error, setError] = useState('');
   const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
-  const [expandedQuestion, setExpandedQuestion] = useState<string | null>(null);
   const detailSectionRef = useRef<HTMLDivElement | null>(null);
 
   const normalizeQuestionText = (value?: string) => {
@@ -491,57 +490,8 @@ function ExercisesPageContent() {
                                   </Button>
                                 </Link>
                               )}
-                              {/* <button
-                                onClick={() =>
-                                  setExpandedQuestion(
-                                    expandedQuestion === question.id ? null : question.id
-                                  )
-                                }
-                                className="text-sm text-primary hover:underline font-medium px-3 py-2"
-                              >
-                                {expandedQuestion === question.id ? 'Hide Details' : 'Show Answer & Details'}
-                              </button> */}
                             </div>
 
-                            {expandedQuestion === question.id && (
-                              <div className="mt-4 space-y-3 pt-4 border-t">
-                                {question.hint && (
-                                  <div>
-                                    <p className="text-sm font-medium text-gray-900">Hint:</p>
-                                    <p className="text-sm text-gray-600">{question.hint}</p>
-                                  </div>
-                                )}
-
-                                {question.expected_answer && (
-                                  <div>
-                                    <p className="text-sm font-medium text-gray-900">Expected Answer/Solution:</p>
-                                    <pre className="text-xs bg-gray-100 p-3 rounded overflow-x-auto mt-1">
-                                      <code>{question.expected_answer}</code>
-                                    </pre>
-                                  </div>
-                                )}
-
-                                {question.topics && question.topics.length > 0 && (
-                                  <div>
-                                    <p className="text-sm font-medium text-gray-900">Topics Covered:</p>
-                                    <div className="flex flex-wrap gap-1 mt-1">
-                                      {question.topics.map((topic) => (
-                                        <Badge key={topic} variant="secondary" className="text-xs">
-                                          {topic}
-                                        </Badge>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {question.adaptive_note && (
-                                  <div>
-                                    <p className="text-sm font-medium text-gray-900">Note:</p>
-                                    <p className="text-sm text-gray-600">{question.adaptive_note}</p>
-                                  </div>
-                                )}
-                              </div>
-                            )}
                           </CardContent>
                         </Card>
                       ))}

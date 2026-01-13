@@ -9,7 +9,6 @@ import {
   Send,
   ChevronDown,
   ChevronUp,
-  Lightbulb,
   Loader,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -105,10 +104,6 @@ export function MentorChat({
     }
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    handleSendMessage(suggestion);
-  };
-
   return (
     <Card className="flex flex-col h-[525px] border-l">
       {/* Header */}
@@ -161,8 +156,8 @@ export function MentorChat({
               Start a conversation
             </h3>
             <p className="text-xs text-gray-600 mb-4">
-              Start solving your case study with help from the mentor: describe what you're working on,
-              where you're stuck, and how you'd like to improve your approach.
+              Start solving your case study with help from the mentor: describe what you&rsquo;re working on,
+              where you&rsquo;re stuck, and how you&rsquo;d like to improve your approach.
             </p>
           </div>
         ) : (
