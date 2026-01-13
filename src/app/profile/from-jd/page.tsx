@@ -21,6 +21,33 @@ const INDUSTRY_KEYWORDS: Record<string, string[]> = {
   tech: ['tech', 'software', 'developer', 'engineer', 'cloud', 'data'],
 };
 
+type ExtractedJDDetails = {
+  role_title?: string;
+  job_title?: string;
+  title?: string;
+  role?: string;
+  position?: string;
+  function?: string;
+  company_name?: string;
+  company?: string;
+  organisation?: string;
+  organization?: string;
+  employer?: string;
+  client?: string;
+  location?: string | string[];
+  locations?: string[];
+  city?: string;
+  cities?: string[];
+  experience_level?: string;
+  key_responsibilities?: string[];
+  required_skills?: string[] | string;
+  key_skills?: string[];
+  skills?: string[];
+  industry?: string;
+  job_description?: string;
+  [key: string]: string | string[] | undefined;
+};
+
 function normalizeExperienceLevel(raw?: string) {
   const lower = raw?.toLowerCase() || '';
   if (EXPERIENCE_LEVELS.includes(lower)) return lower;
@@ -55,7 +82,7 @@ function normalizeIndustry(raw?: string, fallbackText?: string) {
   return 'tech';
 }
 
-function buildRoleFromExtract(extracted?: Record<string, any>) {
+function buildRoleFromExtract(extracted?: ExtractedJDDetails) {
   if (!extracted) return '';
   return (
     extracted.role_title ||
@@ -68,7 +95,7 @@ function buildRoleFromExtract(extracted?: Record<string, any>) {
   );
 }
 
-function buildCompanyFromExtract(extracted?: Record<string, any>) {
+function buildCompanyFromExtract(extracted?: ExtractedJDDetails) {
   if (!extracted) return '';
   return (
     extracted.company_name ||
@@ -81,7 +108,7 @@ function buildCompanyFromExtract(extracted?: Record<string, any>) {
   );
 }
 
-function buildLocationFromExtract(extracted: Record<string, any>) {
+function buildLocationFromExtract(extracted: ExtractedJDDetails) {
   const location = extracted.location || extracted.locations;
   if (Array.isArray(location)) {
     return location[0] || '';
@@ -122,12 +149,12 @@ function parseCompanyFromJDText(text?: string) {
   }
 
   const matchAbout = text.match(/About\s+([\w\s&.,]+)/i);
-  if (matchAbout) {
+  if (matchAbout?.[1]) {
     return matchAbout[1].trim();
   }
 
   const matchCompany = text.match(/Company[:\s-]+([^\n]+)/i);
-  if (matchCompany) {
+  if (matchCompany?.[1]) {
     return matchCompany[1].trim();
   }
 
@@ -167,9 +194,10 @@ function buildConclusionText(source?: string, maxSentences = 2) {
     .map((paragraph) => paragraph.trim())
     .filter(Boolean);
 
-  const targetParagraph = paragraphs.length
-    ? paragraphs[paragraphs.length - 1]
-    : normalized;
+  const targetParagraph =
+    paragraphs.length > 0
+      ? paragraphs[paragraphs.length - 1] ?? normalized
+      : normalized;
 
   const sentenceMatches =
     targetParagraph.match(/[^.!?]+[.!?]+/g) ||
@@ -195,7 +223,8 @@ function buildConclusionText(source?: string, maxSentences = 2) {
 function extractFirstBulletLine(text?: string) {
   if (!text) return '';
   const match = text.match(/(?:•|-|\*)\s*([^\n]+)/m);
-  return match ? match[1].trim().replace(/\.$/, '') : '';
+  const bullet = match?.[1];
+  return bullet ? bullet.trim().replace(/\.$/, '') : '';
 }
 
 function limitWords(text: string, maxWords = 60) {
@@ -205,7 +234,7 @@ function limitWords(text: string, maxWords = 60) {
 }
 
 function buildShortJDSummary(
-  extracted?: Record<string, any>,
+  extracted?: ExtractedJDDetails,
   source?: string,
 ) {
   const role = buildRoleFromExtract(extracted || undefined);
@@ -268,7 +297,7 @@ function ProfileFromJDContent() {
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState('');
   const [jdContent, setJdContent] = useState('');
-  const [extractedDetails, setExtractedDetails] = useState<Record<string, any> | null>(null);
+  const [extractedDetails, setExtractedDetails] = useState<ExtractedJDDetails | null>(null);
 
   const [formData, setFormData] = useState({
     email: '',
@@ -340,7 +369,7 @@ function ProfileFromJDContent() {
           throw new Error('Failed to extract data from job description');
         }
 
-        const extracted = await extractResponse.json();
+        const extracted = (await extractResponse.json()) as ExtractedJDDetails;
         setExtractedDetails(extracted);
 
         const fallbackRole = parseRoleFromJDText(jdText);
