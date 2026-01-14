@@ -428,7 +428,7 @@ const DomainKnowledgeMarkdown = ({ text }: { text: string }) => (
                           {/* Subject Actions */}
                           {subject?.trim().toLowerCase() !== 'domain knowledge' && (
                             <div className="flex justify-end">
-                              <Link href={buildExercisesHref(subject)}>
+                              <Link href={buildExercisesHref(subject)} target="_blank" rel="noopener noreferrer">
                                 <Button className="bg-blue-600 hover:bg-blue-700 text-white">
                                   Start {subject} Practice
                                   <ArrowLeft className="w-4 h-4 ml-2 rotate-180" />
@@ -636,11 +636,11 @@ const DomainKnowledgeMarkdown = ({ text }: { text: string }) => (
                                           </Badge>
                                         )}
                                       </div>
-                                      {/* {answerSnippet && (
+                                      {answerSnippet && (
                                         <pre className="text-xs bg-gray-900 text-white p-3 rounded-lg overflow-x-auto whitespace-pre-wrap">
                                           {answerSnippet}
                                         </pre>
-                                      )} */}
+                                      )}
                                     </div>
                                   );
                                 })}

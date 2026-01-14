@@ -283,6 +283,44 @@ export function CodeExecutor({
       resetPreviewNeededRef.current = false;
     }
 
+    const escapeSqlIdentifier = (identifier: string) =>
+      `"${identifier.replace(/"/g, '""')}"`;
+
+    const escapeSqlValue = (value: JsonValue): string => {
+      if (value === null || value === undefined || value === '') {
+        return 'NULL';
+      }
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return String(value);
+      }
+      if (typeof value === 'boolean') {
+        return value ? 'TRUE' : 'FALSE';
+      }
+      const stringValue = String(value);
+      const escaped = stringValue.replace(/'/g, "''");
+      return `'${escaped}'`;
+    };
+
+    const buildInsertStatements = (
+      targetTable: string,
+      columnOrder: string[],
+      rows: Record<string, JsonValue>[],
+    ): string => {
+      if (rows.length === 0 || columnOrder.length === 0) {
+        return '';
+      }
+
+      const columnsPart = columnOrder.map(escapeSqlIdentifier).join(', ');
+      return rows
+        .map((row) => {
+          const rowValues = columnOrder.map((column) => escapeSqlValue(row[column] ?? null));
+          return `INSERT INTO ${escapeSqlIdentifier(targetTable)} (${columnsPart}) VALUES (${rowValues.join(
+            ', ',
+          )});`;
+        })
+        .join('\n');
+    };
+
     const loadDatasets = async () => {
       if (dataLoadInProgressRef.current) {
         return;
@@ -304,8 +342,8 @@ export function CodeExecutor({
         return matches;
       };
 
-      const splitSqlStatements = (sql: string) => {
-        const statements: string[] = [];
+    const splitSqlStatements = (sql: string) => {
+      const statements: string[] = [];
         let current = '';
         let inSingleQuote = false;
         let inDoubleQuote = false;
@@ -349,8 +387,13 @@ export function CodeExecutor({
           statements.push(current.trim());
         }
 
-        return statements;
-      };
+      return statements;
+    };
+
+    const creationSqlLooksLikeSql = (sql: string) => {
+      if (!sql) return false;
+      return /\b(create\s+table|insert\s+into|with\s+|alter\s+table|drop\s+table)\b/i.test(sql);
+    };
 
       const executeSqlBlock = async (sql?: string) => {
         const sqlInput = stripSqlCodeFences(sql);
@@ -425,10 +468,27 @@ export function CodeExecutor({
         }
 
         for (const [datasetIndex, dataset] of datasets.entries()) {
+          const schemaRows =
+            dataset.schema_info && Array.isArray(dataset.schema_info.dataset_rows)
+              ? (dataset.schema_info.dataset_rows as Record<string, JsonValue>[])
+              : [];
+
+          const datasetRows =
+            Array.isArray(dataset.data) && dataset.data.length > 0
+              ? dataset.data
+              : schemaRows.length > 0
+                ? schemaRows
+                : parseCsvToObjects(dataset.dataset_csv_raw);
+
+          const tableName =
+            dataset.table_name ||
+            sanitizeTableName(dataset.name || dataset.id, datasetIndex + 1);
+
           const creationSqlRaw = dataset.creation_sql || dataset.data_creation_sql;
           const sanitizedCreationSql = stripSqlCodeFences(creationSqlRaw);
+          const shouldExecuteCreationSql = creationSqlLooksLikeSql(sanitizedCreationSql);
 
-          if (sanitizedCreationSql.length > 0) {
+          if (sanitizedCreationSql.length > 0 && shouldExecuteCreationSql) {
             const creationTables = extractCreateTableNames(sanitizedCreationSql);
             const shouldExecute =
               creationTables.length === 0 ||
@@ -441,25 +501,27 @@ export function CodeExecutor({
             } else {
               console.log(`dY\"S CodeExecutor: Executing creation SQL for dataset: ${dataset.name}`);
               await executeSqlBlock(sanitizedCreationSql);
+
+              const creationHasInsert = /INSERT\s+INTO/i.test(sanitizedCreationSql);
+              if (!creationHasInsert && datasetRows.length > 0) {
+                const columnCandidates =
+                  Array.isArray(dataset.columns) && dataset.columns.length > 0
+                    ? dataset.columns
+                    : Object.keys(datasetRows[0] || {});
+                const insertSql = buildInsertStatements(tableName, columnCandidates, datasetRows);
+                if (insertSql) {
+                  console.log(
+                    `dY\"S CodeExecutor: Inserting rows for dataset ${tableName} via generated SQL`,
+                  );
+                  await executeSqlBlock(insertSql);
+                }
+              }
             }
+          } else if (sanitizedCreationSql.length > 0) {
+            console.log(
+              `dY\"S CodeExecutor: Skipping creation SQL for dataset ${dataset.name} (looks like CSV or non-SQL text)`,
+            );
           } else {
-            const schemaRows =
-              dataset.schema_info &&
-              Array.isArray(dataset.schema_info.dataset_rows)
-                ? dataset.schema_info.dataset_rows as Record<string, JsonValue>[]
-                : [];
-
-            const datasetRows =
-              Array.isArray(dataset.data) && dataset.data.length > 0
-                ? dataset.data
-                : schemaRows.length > 0
-                  ? schemaRows
-                  : parseCsvToObjects(dataset.dataset_csv_raw);
-
-            const tableName =
-              dataset.table_name ||
-              sanitizeTableName(dataset.name || dataset.id, datasetIndex + 1);
-
             if (datasetRows.length > 0) {
               console.log(
                 `dY\"S CodeExecutor: Loading dataset: ${tableName} (rows=${datasetRows.length})`,
@@ -473,10 +535,10 @@ export function CodeExecutor({
           }
         }
 
-        const showTablesResult = await duckdb.executeQuery('SHOW TABLES');
-        if (showTablesResult.success) {
-          console.log('dY\"< CodeExecutor: Tables in DuckDB:', showTablesResult.result?.rows);
-        }
+            const showTablesResult = await duckdb.executeQuery('SHOW TABLES');
+            if (showTablesResult.success) {
+              console.log('dY\"< CodeExecutor: Tables in DuckDB:', showTablesResult.result?.rows);
+            }
         const tableNames =
           showTablesResult.success && showTablesResult.result
             ? (showTablesResult.result.rows ?? [])

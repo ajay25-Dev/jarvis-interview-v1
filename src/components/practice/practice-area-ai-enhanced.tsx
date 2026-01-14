@@ -1398,7 +1398,7 @@ return (
 
       {/* Left Panel - Problem & Context */}
 
-      <div className="flex-1 flex flex-col overflow-hidden min-w-[400px]">
+      <div className="flex-1 basis-1/2 flex flex-col overflow-hidden min-w-0">
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col h-full overflow-hidden">
 
@@ -2085,7 +2085,7 @@ return (
 
                                             >
 
-                                              {formatDatasetValue(resolveCellValue(col))}
+                                              {formatDatasetValue(resolveCellValue(col), col)}
 
                                             </td>
 
@@ -2215,9 +2215,11 @@ return (
 
                             {table.rows.length > 0 ? (
 
-                              <div className="overflow-x-auto rounded border border-gray-200 bg-gray-50">
+                              <div className="w-full max-w-full overflow-x-scroll overflow-y-scroll max-h-[320px] rounded border border-gray-200 bg-gray-50">
 
-                                <table className="min-w-full text-[11px] text-left text-gray-700">
+                                <table
+                                  className="w-full table-fixed min-w-full text-[11px] text-left text-gray-700 break-words overflow-x-auto"
+                                >
 
                                   <thead className="bg-white text-gray-500 uppercase tracking-wide text-[10px]">
 
@@ -2261,11 +2263,11 @@ return (
 
                                             key={`sql-cell-${table.tableName}-${rowIdx}-${colIdx}`}
 
-                                            className="px-2 py-1"
+                                            className="px-2 py-1 break-words"
 
                                           >
 
-                                            {formatDatasetValue(row[colIdx])}
+                                            {formatDatasetValue(row[colIdx], table.columns[colIdx])}
 
                                           </td>
 
@@ -2537,7 +2539,7 @@ return (
 
       <PracticeErrorBoundary>
 
-        <div className="flex-1 flex flex-col overflow-hidden min-w-[400px] gap-4">
+        <div className="flex-1 basis-1/2 flex flex-col overflow-hidden min-w-0 gap-4">
 
           {duckDbTableNames.length > 0 && (
 
@@ -2643,6 +2645,18 @@ return (
 
           )}
 
+          {isTextAnswerMode && (
+            <div className="hidden" aria-hidden="true">
+              <CodeExecutor
+                exerciseType={exerciseType}
+                datasets={datasets}
+                initialCode={userCode}
+                dataCreationSql={dataCreationSql}
+                onSqlTablePreviews={setSqlTablePreviews}
+                onTableList={setDuckDbTableNames}
+              />
+            </div>
+          )}
 
 
           {/* Results Panel */}

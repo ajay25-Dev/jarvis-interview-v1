@@ -186,7 +186,9 @@ function SelectSubjectsContent() {
         const { topic, topic_hierarchy } = getTopicInfo(
           selectedSubjects[0] || domain,
         );
-        const solutionLanguage = 'sql';
+        const solutionLanguage = resolveSubjectSolutionLanguage(
+          selectedSubjects[0] || domain,
+        );
 
         console.log({
           profile_id: parseInt(profileId!),
@@ -217,16 +219,16 @@ function SelectSubjectsContent() {
               body: JSON.stringify({
                 profile_id: parseInt(profileId!),
                 jd_id: parseInt(jdId!),
-                subject,
-                domain,
-                learner_level: learnerLevel || 'Beginner',
-                topic: subjectTopic,
-                topic_hierarchy: subjectTopicHierarchy,
-                future_topics: [],
-                question_count: 8,
-                solution_language: solutionLanguage,
-              }),
-            }
+          subject,
+          domain,
+          learner_level: learnerLevel || 'Beginner',
+          topic: subjectTopic,
+          topic_hierarchy: subjectTopicHierarchy,
+          future_topics: [],
+          question_count: 8,
+          solution_language: resolveSubjectSolutionLanguage(subject),
+        }),
+      }
           );
 
           if (!exercisesResponse.ok) {
@@ -409,4 +411,28 @@ function mapExperienceToLearnerLevel(
     return 'Advanced';
   }
   return 'Intermediate';
+}
+
+function resolveSubjectSolutionLanguage(
+  subject?: string | null,
+): string {
+  const normalized = (subject || '').trim().toLowerCase();
+  if (
+    normalized === 'google_sheets' ||
+    normalized === 'google sheet' ||
+    normalized === 'google sheets' ||
+    normalized === 'sheets' ||
+    normalized === 'sheet' ||
+    normalized === 'statistics' ||
+    normalized === 'statistic'
+  ) {
+    return 'excel formula';
+  }
+  if (normalized === 'python') {
+    return 'python';
+  }
+  if (normalized === 'sql') {
+    return 'sql';
+  }
+  return subject?.trim() || 'sql';
 }

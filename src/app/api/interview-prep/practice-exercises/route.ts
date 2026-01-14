@@ -57,6 +57,90 @@ const normalizeDataRows = (value?: JsonValue): JsonObject[] => {
   return [];
 };
 
+const splitCsvLine = (line: string): string[] => {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+
+    if (char === '"') {
+      const nextChar = line[i + 1];
+      if (inQuotes && nextChar === '"') {
+        current += '"';
+        i += 1;
+        continue;
+      }
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      values.push(current.trim());
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current.trim());
+  return values;
+};
+
+const parseCsvSampleData = (
+  value?: JsonValue,
+): { rows: JsonObject[]; columns: string[] } => {
+  if (!value || typeof value !== 'string') {
+    return { rows: [], columns: [] };
+  }
+
+  const normalized = value.replace(/\r\n/g, '\n');
+  const lines = normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const sanitizedLines = lines.filter((line) => {
+    const trimmedLine = line.trim();
+    return (
+      trimmedLine.length > 0 &&
+      !trimmedLine.startsWith('//') &&
+      !trimmedLine.startsWith('--') &&
+      !trimmedLine.startsWith('#')
+    );
+  });
+
+  if (sanitizedLines.length === 0) {
+    return { rows: [], columns: [] };
+  }
+
+  const headerLine = sanitizedLines[0];
+  if (!headerLine) {
+    return { rows: [], columns: [] };
+  }
+
+  const headers = splitCsvLine(headerLine).map((header, idx) =>
+    header.length > 0 ? header : `column_${idx + 1}`,
+  );
+
+  if (headers.length === 0 || sanitizedLines.length === 1) {
+    return { rows: [], columns: [] };
+  }
+
+  const rows = sanitizedLines.slice(1).map((line) => {
+    const cells = splitCsvLine(line);
+    const row: JsonObject = {};
+    headers.forEach((header, idx) => {
+      row[header] = cells[idx] ?? '';
+    });
+    return row;
+  });
+
+  return { rows, columns: headers };
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY =
@@ -319,13 +403,29 @@ export async function GET(request: NextRequest) {
                 }
               } else {
                 const tableName = cs.dataset_name || `dataset_${idx + 1}`;
-                const columns =
+                const schemaColumns =
                   Array.isArray(cs.dataset_schema) &&
                   cs.dataset_schema.every((col) => typeof col === 'string')
                     ? (cs.dataset_schema as string[])
                     : typeof cs.dataset_schema === 'object' && cs.dataset_schema !== null
                       ? Object.keys(cs.dataset_schema as JsonObject)
                       : [];
+                const parsedSampleData = parseCsvSampleData(cs.sample_data);
+                let columns =
+                  parsedSampleData.columns.length > 0
+                    ? parsedSampleData.columns
+                    : schemaColumns;
+                const dataRows =
+                  parsedSampleData.rows.length > 0
+                    ? parsedSampleData.rows
+                    : normalizeDataRows(cs.sample_data);
+
+                if (columns.length === 0 && dataRows.length > 0) {
+                  const [firstRow] = dataRows;
+                  if (firstRow) {
+                    columns = Object.keys(firstRow);
+                  }
+                }
 
                 datasets.push({
                   id: `ds-${plan.id}-${subjectName}-${idx}`,
@@ -334,7 +434,11 @@ export async function GET(request: NextRequest) {
                   table_name: tableName,
                   columns,
                   creation_sql: cs.dataset_creation_sql,
-                  data: normalizeDataRows(cs.sample_data),
+                  data: dataRows,
+                  dataset_rows: dataRows,
+                  dataset_columns: columns,
+                  dataset_csv_raw:
+                    typeof cs.sample_data === 'string' ? cs.sample_data : undefined,
                   subject_type: datasetSubjectType,
                 });
               }

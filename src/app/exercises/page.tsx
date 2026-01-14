@@ -1,11 +1,11 @@
 'use client';
 
-import { Suspense, useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Loader, Code2, BookOpen } from 'lucide-react';
+import { ArrowLeft, Loader, Code2, BookOpen, Download } from 'lucide-react';
 import Link from 'next/link';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import { JsonObject } from '@/components/practice/types';
@@ -22,6 +22,15 @@ interface PracticeQuestion {
   adaptive_note?: string;
 }
 
+interface PracticeDatasetDefinition {
+  name?: string;
+  description?: string;
+  table_name?: string;
+  columns?: string[];
+  creation_sql?: string;
+  data?: JsonObject[];
+}
+
 interface PracticeExerciseSet {
   id?: string;
   profile_id: number;
@@ -32,14 +41,7 @@ interface PracticeExerciseSet {
   data_creation_sql?: string;
   data_creation_python?: string;
   dataset_csv?: string;
-  datasets?: Array<{
-    name?: string;
-    description?: string;
-    table_name?: string;
-    columns?: string[];
-    creation_sql?: string;
-    data?: JsonObject[];
-  }>;
+  datasets?: PracticeDatasetDefinition[];
   created_at?: string;
 }
 
@@ -53,6 +55,7 @@ function ExercisesPageContent() {
   const [error, setError] = useState('');
   const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
   const detailSectionRef = useRef<HTMLDivElement | null>(null);
+  const [downloadingDatasetId, setDownloadingDatasetId] = useState<string | null>(null);
 
   const isProblemSolvingSubject = (subject?: string) =>
     subject?.toLowerCase().includes('problem solving');
@@ -73,6 +76,69 @@ function ExercisesPageContent() {
       .filter(Boolean)
       .join('\n');
   };
+
+  const downloadDatasetPreview = useCallback(
+    async (
+      dataset: PracticeDatasetDefinition,
+      columnKeys: string[],
+      label: string,
+      downloadKey: string,
+    ) => {
+      if (!dataset) {
+        return;
+      }
+
+      const datasetRows = dataset.data ?? [];
+      if (datasetRows.length === 0 || columnKeys.length === 0) {
+        return;
+      }
+
+      const sanitizeForFile = (value: string) =>
+        value.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_').trim();
+      const normalizedLabel = sanitizeForFile(label || 'dataset');
+      const safeWorksheetName = normalizedLabel.slice(0, 31) || 'Sheet1';
+      const safeFileName = (normalizedLabel || 'dataset').slice(0, 120);
+
+      const normalizeCellForExport = (value: unknown) => {
+        if (value === null || value === undefined) {
+          return '';
+        }
+        if (typeof value === 'bigint') {
+          return value.toString();
+        }
+        if (typeof value === 'object') {
+          try {
+            return JSON.stringify(value);
+          } catch {
+            return String(value);
+          }
+        }
+        return value;
+      };
+
+      try {
+        setDownloadingDatasetId(downloadKey);
+        const XLSX = await import('xlsx');
+        const worksheetData = [
+          columnKeys,
+          ...datasetRows.map((row) =>
+            columnKeys.map((column) =>
+              normalizeCellForExport((row as Record<string, unknown>)[column]),
+            ),
+          ),
+        ];
+        const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, safeWorksheetName);
+        XLSX.writeFile(workbook, `${safeFileName}.xlsx`);
+      } catch (error) {
+        console.error('Failed to export dataset preview', error);
+      } finally {
+        setDownloadingDatasetId(null);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const fetchExercises = async () => {
@@ -343,68 +409,124 @@ function ExercisesPageContent() {
                           )}
 
                           {currentExerciseSet.datasets?.map((dataset, idx) => {
-                            const sampleRows = dataset.data?.slice(0, 3) || [];
-                            const sampleRow = sampleRows[0];
+                            const datasetRows = dataset.data ?? [];
+                            const datasetPreviewRows = datasetRows.slice(0, 3);
+                            const sampleRow = datasetPreviewRows[0];
                             const inferredColumnKeys =
                               sampleRow && typeof sampleRow === 'object'
-                                ? Object.keys(sampleRow)
+                                ? Object.keys(sampleRow as Record<string, unknown>)
                                 : [];
                             const columnKeys =
                               dataset.columns?.length && dataset.columns.length > 0
                                 ? dataset.columns
                                 : inferredColumnKeys;
+                            const datasetLabel =
+                              dataset.table_name || dataset.name || `Dataset ${idx + 1}`;
+                            const downloadKey = `${currentExerciseSet.id ?? 'practice'}-${datasetLabel}-${idx}`;
+                            const hasPreview =
+                              datasetPreviewRows.length > 0 && columnKeys.length > 0;
 
                             return (
-                              <div key={`dataset-summary-${idx}`} className="space-y-2 rounded-lg border border-gray-100 p-3 bg-gray-50">
-                                <p className="text-xs uppercase tracking-wide text-gray-500">
-                                  {dataset.table_name || dataset.name || `Dataset ${idx + 1}`}
-                                </p>
-                                {dataset.description && (
-                                  <p className="text-sm text-gray-700">
-                                    {dataset.description}
-                                  </p>
-                                )}
-                                {columnKeys.length > 0 && (
-                                  <div className="flex flex-wrap gap-2">
-                                    {columnKeys.map((column) => (
-                                      <Badge key={`col-${column}`} variant="outline" className="text-[11px]">
-                                        {column}
-                                      </Badge>
-                                    ))}
+                              <div
+                                key={`dataset-summary-${idx}`}
+                                className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                              >
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">
+                                      {datasetLabel}
+                                    </p>
+                                    {dataset.description && (
+                                      <p className="mt-1 text-sm text-slate-700">{dataset.description}</p>
+                                    )}
+                                    {columnKeys.length > 0 && (
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        {columnKeys.map((column, columnIdx) => (
+                                          <Badge
+                                            key={`col-${columnIdx}-${column}`}
+                                            variant="outline"
+                                            className="text-[11px]"
+                                          >
+                                            {column}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                                {sampleRows.length > 0 && (
-                                  <div className="overflow-x-auto rounded border border-gray-200">
-                                    <table className="min-w-full text-[11px] text-left text-gray-800">
-                                      <thead className="bg-white text-gray-500 uppercase">
+                                  {hasPreview && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        downloadDatasetPreview(dataset, columnKeys, datasetLabel, downloadKey)
+                                      }
+                                      disabled={downloadingDatasetId === downloadKey}
+                                      className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      <Download className="h-3.5 w-3.5" />
+                                      <span>
+                                        {downloadingDatasetId === downloadKey ? 'Preparing...' : 'Download .xlsx'}
+                                      </span>
+                                    </button>
+                                  )}
+                                </div>
+                                {hasPreview ? (
+                                  <div className="max-h-[280px] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+                                    <table className="min-w-full border-collapse text-[11px] text-slate-700">
+                                      <thead className="sticky top-0 bg-slate-100 text-slate-500 uppercase">
                                         <tr>
-                                          {columnKeys.map((column) => (
-                                            <th key={`head-${column}`} className="px-2 py-1">
+                                          {columnKeys.map((column, columnIdx) => (
+                                            <th
+                                              key={`head-${columnIdx}-${column}`}
+                                              className="border border-slate-200 px-3 py-2 text-left font-semibold"
+                                            >
                                               {column}
                                             </th>
                                           ))}
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {sampleRows.map((row, rowIdx) => (
-                                          <tr key={`row-${rowIdx}`} className="border-t border-gray-100">
-                                            {columnKeys.map((column, colIdx) => (
-                                              <td key={`cell-${rowIdx}-${colIdx}`} className="px-2 py-1">
-                                                {formatDatasetValue(row[column])}
-                                              </td>
-                                            ))}
+                                        {datasetPreviewRows.map((row, rowIdx) => (
+                                          <tr
+                                            key={`row-${rowIdx}`}
+                                            className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}
+                                          >
+                                            {columnKeys.map((column, columnIdx) => {
+                                              const formattedValue = formatDatasetValue(
+                                                (row as Record<string, unknown>)[column],
+                                                column,
+                                              );
+                                              return (
+                                                <td
+                                                  key={`cell-${rowIdx}-${columnIdx}`}
+                                                  className="border border-slate-200 px-3 py-2 font-mono text-[11px] text-slate-600"
+                                                >
+                                                  <span
+                                                    className="block max-w-[150px] truncate"
+                                                    title={formattedValue}
+                                                  >
+                                                    {formattedValue}
+                                                  </span>
+                                                </td>
+                                              );
+                                            })}
                                           </tr>
                                         ))}
                                       </tbody>
                                     </table>
                                   </div>
+                                ) : (
+                                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                                    {datasetRows.length === 0
+                                      ? 'No sample rows are available for this dataset yet.'
+                                      : 'Column metadata is missing for this dataset.'}
+                                  </div>
                                 )}
                                 {dataset.creation_sql && (
                                   <div>
-                                    <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                                    <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">
                                       SQL Creation Snippet
                                     </p>
-                                    <pre className="bg-gray-900 text-white text-xs p-3 rounded-lg overflow-x-auto whitespace-pre-wrap">
+                                    <pre className="bg-slate-900 text-white text-xs p-3 rounded-lg overflow-x-auto whitespace-pre-wrap">
                                       {dataset.creation_sql}
                                     </pre>
                                   </div>
@@ -494,18 +616,25 @@ function ExercisesPageContent() {
                                       const query = params.toString();
                                       return `/problem-solving/practice${query ? `?${query}` : ''}`;
                                     })()}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
                                   >
                                     <Code2 className="w-4 h-4" />
-                                    Solve
+                                    Solve Case Study
                                   </a>
                                 </Button>
                               ) : (
-                                <Link href={`/practice/${currentExerciseSet.id}/question/${question.id}`}>
+                                <Link
+                                  href={`/practice/${currentExerciseSet.id}/question/${question.id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
                                   <Button size="sm" className={solveButtonClassName}>
                                     <Code2 className="w-4 h-4" />
-                                    Solve
+                                    Solve Question
                                   </Button>
                                 </Link>
+
                               )}
                             </div>
 
