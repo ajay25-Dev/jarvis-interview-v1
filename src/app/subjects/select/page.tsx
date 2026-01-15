@@ -290,9 +290,7 @@ const [suggestedSubjects, setSuggestedSubjects] = useState<string[]>(ensureDomai
   }
 
     const snapshotGradientStyles: CSSProperties & Record<string, string> = {
-      '--tw-gradient-via': 'oklch(0.72 0.13 234.98)',
-      '--tw-gradient-via-stops':
-        'var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), oklch(0.5 0.07 202.57) var(--tw-gradient-via-position), var(--tw-gradient-to) var(--tw-gradient-to-position)',
+      background: 'linear-gradient(45deg, #3F51B5, #673AB7)',
     };
 
   return (
@@ -331,10 +329,10 @@ const [suggestedSubjects, setSuggestedSubjects] = useState<string[]>(ensureDomai
             <div className="flex-1 space-y-6">
               <div style={snapshotGradientStyles} className="rounded-[10px] border border-slate-900/10 bg-gradient-to-b from-slate-950/90 via-slate-900/80 to-slate-900/60 p-6 text-white shadow-[0_3px_5px_rgba(15,23,42,0.45)]">
                 <div className="space-y-2">
-                  <p className="text-[10px] uppercase tracking-[0.1em] text-white/100">Job snapshot</p>
+                  <p className="text-[13px] uppercase tracking-[0.1em] text-white/100">Job snapshot</p>
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium text-white/100">Confidence</span>
-                    <span className="text-xs rounded-full border border-white/30 px-3 py-1 uppercase tracking-[0.3em] text-white/80">
+                    <span className="text-xs rounded-full border border-white/30 px-3 py-1 uppercase tracking-[0.3em] text-white/100">
                       High
                     </span>
                   </div>
@@ -567,19 +565,19 @@ function SummaryStat({
   highlight?: boolean;
 }) {
   const wrapperStyle = highlight
-    ? 'border border-white/30 bg-white/10 shadow-[0_12px_40px_rgba(15,23,42,0.6)]'
-    : 'border border-slate-200 bg-white/80 shadow-none';
+    ? 'border border-white/30 bg-black/10 shadow-[0_12px_40px_rgba(15,23,42,0.6)]'
+    : 'border border-slate-700 bg-black/80 shadow-none';
 
   return (
-    <div className={`rounded-[16px] px-4 py-3 ${wrapperStyle}`}>
-      <p
-        className={`text-[10px] uppercase tracking-[0.4em] ${
-          highlight ? 'text-white/70' : 'text-slate-400'
+    <div style={{ backgroundColor: '#fff' }} className={`rounded-[10px] px-4 py-3 ${wrapperStyle}`}>
+      <p style={{ fontWeight: 'bold' }}
+        className={`text-[12px] uppercase text-slate-900 tracking-[0.1em] ${
+          highlight ? 'text-black/100' : 'text-slate-900'
         }`}
       >
         {label}
       </p>
-      <p className={`text-sm font-semibold ${highlight ? 'text-white' : 'text-slate-900'}`}>
+      <p className={`text-sm ${highlight ? 'text-black' : 'text-slate-500'}`}>
         {value}
       </p>
     </div>

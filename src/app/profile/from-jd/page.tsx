@@ -368,9 +368,7 @@ function ProfileFromJDContent() {
   const textareaClasses =
     'w-full rounded-[10px] border border-gray-400 px-3 py-3 mt-2 text-base font-semibold text-grey outline-none transition duration-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/50';
   const snapshotGradientStyles: CSSProperties & Record<string, string> = {
-    '--tw-gradient-via': 'oklch(0.72 0.13 234.98)',
-    '--tw-gradient-via-stops':
-      'var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), oklch(0.5 0.07 202.57) var(--tw-gradient-via-position), var(--tw-gradient-to) var(--tw-gradient-to-position)',
+    background: 'linear-gradient(45deg, #3F51B5, #673AB7)',
   };
 
   const handleChange = (
@@ -488,11 +486,11 @@ function ProfileFromJDContent() {
             >
 
               <div className="space-y-2">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.5em] text-white/60">
+                  <p className="text-[13px] font-semibold uppercase tracking-[0.1em] text-white/100">
                     Job Snapshot
                   </p>
                   <div className="flex items-center justify-between text-sm" style={{ margin: '0px 0px 20px 0px' }}>
-                    <span className="font-medium text-white/70">Confidence: High</span>
+                    <span className="font-medium text-white/100">Confidence: High</span>
                     <span className="font-semibold text-white">JD #{jdId || '—'}</span>
                   </div>
                 </div>
@@ -695,20 +693,20 @@ function SummaryStat({
   value: string;
   highlight?: boolean;
 }) {
+  const wrapperStyle = highlight
+    ? 'border border-white/30 bg-black/10 shadow-[0_12px_40px_rgba(15,23,42,0.6)]'
+    : 'border border-slate-700 bg-black/80 shadow-none';
+
   return (
-    <div className="rounded-3xl border border-white/5 bg-white/5 px-4 py-3">
-      <p
-        className={`text-[10px] uppercase tracking-[0.4em] ${
-          highlight ? 'text-white/60' : 'text-slate-300'
+    <div style={{ backgroundColor: '#fff' }} className={`rounded-[10px] px-4 py-3 ${wrapperStyle}`}>
+      <p style={{ fontWeight: 'bold' }}
+        className={`text-[12px] uppercase text-slate-900 tracking-[0.1em] ${
+          highlight ? 'text-black/100' : 'text-slate-900'
         }`}
       >
         {label}
       </p>
-      <p
-        className={`text-sm font-semibold leading-snug ${
-          highlight ? 'text-white' : 'text-slate-200'
-        }`}
-      >
+      <p className={`text-sm ${highlight ? 'text-black' : 'text-slate-500'}`}>
         {value}
       </p>
     </div>
