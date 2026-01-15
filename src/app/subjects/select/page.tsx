@@ -1,16 +1,34 @@
-/* eslint-disable @typescript-eslint/no-unused-vars, react-hooks/exhaustive-deps */
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, type CSSProperties } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import { ArrowLeft, Loader, CheckCircle2, Circle } from 'lucide-react';
+import { ArrowLeft, Loader, Check, Book, Puzzle, Table, BarChart3, Database, Code, BarChart } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 
 const DEFAULT_SUBJECTS = ['Domain Knowledge', 'Problem Solving' , 'Google Sheet', 'Statistics', 'SQL', 'Python', 'Power BI'];
+
+const SUBJECT_ICON_MAP: Record<string, LucideIcon> = {
+  'Domain Knowledge': Book,
+  'Problem Solving': Puzzle,
+  'Google Sheet': Table,
+  Statistics: BarChart3,
+  SQL: Database,
+  Python: Code,
+  'Power BI': BarChart,
+};
+
+const defaultIcon: LucideIcon = Book;
+
+function ensureDomainKnowledge(subjects: string[]) {
+  if (subjects.includes('Domain Knowledge')) {
+    return subjects;
+  }
+  return ['Domain Knowledge', ...subjects];
+}
 
 const SUBJECT_TOPIC_MAP: Record<
   string,
@@ -59,13 +77,14 @@ function SelectSubjectsContent() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
-  const [suggestedSubjects, setSuggestedSubjects] = useState<string[]>(DEFAULT_SUBJECTS);
-  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+const [suggestedSubjects, setSuggestedSubjects] = useState<string[]>(ensureDomainKnowledge(DEFAULT_SUBJECTS));
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>(ensureDomainKnowledge(DEFAULT_SUBJECTS));
   const [company, setCompany] = useState('');
   const [profile, setProfile] = useState<{
     company_name?: string | null;
     experience_level?: string | null;
     industry?: string | null;
+    target_role?: string | null;
   } | null>(null);
 
   // Fetch company and suggested subjects
@@ -80,39 +99,43 @@ function SelectSubjectsContent() {
       try {
         setLoading(true);
 
-        // Get profile to get company name
+        let companyName = '';
         const profileRes = await fetch('/api/profile');
         if (profileRes.ok) {
           const profileData = await profileRes.json();
           setProfile(profileData);
-          setCompany(profileData?.company_name || '');
+          companyName = profileData?.company_name || '';
+          setCompany(companyName);
         }
 
-        // Try to fetch suggested subjects from backend
+        let resolvedSubjects = DEFAULT_SUBJECTS;
         try {
           const suggestRes = await fetch('/api/interview-prep/domain-kpi', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ company_name: company || 'Tech Company' }),
+            body: JSON.stringify({ company_name: companyName || 'Tech Company' }),
           });
 
           if (suggestRes.ok) {
             const suggested = await suggestRes.json();
             const subjectList = suggested.suggested_subjects || suggested.subjects || DEFAULT_SUBJECTS;
-            setSuggestedSubjects(Array.isArray(subjectList) ? subjectList : DEFAULT_SUBJECTS);
+            if (Array.isArray(subjectList) && subjectList.length > 0) {
+              resolvedSubjects = subjectList;
+            }
           }
-        } catch (err) {
-          // Use default subjects if backend call fails
-          setSuggestedSubjects(DEFAULT_SUBJECTS);
+        } catch {
+          resolvedSubjects = DEFAULT_SUBJECTS;
         }
 
-        // Set initial selection to all suggested subjects
-        setSelectedSubjects(suggestedSubjects);
+        const subjectsWithDomain = ensureDomainKnowledge(resolvedSubjects);
+        setSuggestedSubjects(subjectsWithDomain);
+        setSelectedSubjects(subjectsWithDomain);
       } catch (err) {
         console.error('Error:', err);
         setError(err instanceof Error ? err.message : 'Failed to load subjects');
-        setSuggestedSubjects(DEFAULT_SUBJECTS);
-        setSelectedSubjects(DEFAULT_SUBJECTS);
+        const fallbackSubjects = ensureDomainKnowledge(DEFAULT_SUBJECTS);
+        setSuggestedSubjects(fallbackSubjects);
+        setSelectedSubjects(fallbackSubjects);
       } finally {
         setLoading(false);
       }
@@ -122,12 +145,17 @@ function SelectSubjectsContent() {
   }, [profileId, jdId]);
 
   const toggleSubject = (subject: string) => {
+    if (subject === 'Domain Knowledge') {
+      return;
+    }
     setSelectedSubjects(prev =>
       prev.includes(subject)
         ? prev.filter(s => s !== subject)
         : [...prev, subject]
     );
   };
+
+  const summaryRoleValue = profile?.target_role || selectedSubjects[0] || 'Not detected';
 
   const buildAuthHeaders = async () => {
     const supabase = supabaseBrowser();
@@ -174,7 +202,7 @@ function SelectSubjectsContent() {
         throw new Error(err.details || 'Failed to generate plan');
       }
 
-      const plan = await planResponse.json();
+      await planResponse.json();
 
       // Generate practice exercises for selected subjects
       try {
@@ -219,16 +247,16 @@ function SelectSubjectsContent() {
               body: JSON.stringify({
                 profile_id: parseInt(profileId!),
                 jd_id: parseInt(jdId!),
-          subject,
-          domain,
-          learner_level: learnerLevel || 'Beginner',
-          topic: subjectTopic,
-          topic_hierarchy: subjectTopicHierarchy,
-          future_topics: [],
-          question_count: 8,
-          solution_language: resolveSubjectSolutionLanguage(subject),
-        }),
-      }
+                subject,
+                domain,
+                learner_level: learnerLevel || 'Beginner',
+                topic: subjectTopic,
+                topic_hierarchy: subjectTopicHierarchy,
+                future_topics: [],
+                question_count: 8,
+                solution_language: resolveSubjectSolutionLanguage(subject),
+              }),
+            },
           );
 
           if (!exercisesResponse.ok) {
@@ -261,101 +289,193 @@ function SelectSubjectsContent() {
     );
   }
 
+    const snapshotGradientStyles: CSSProperties & Record<string, string> = {
+      '--tw-gradient-via': 'oklch(0.72 0.13 234.98)',
+      '--tw-gradient-via-stops':
+        'var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), oklch(0.5 0.07 202.57) var(--tw-gradient-via-position), var(--tw-gradient-to) var(--tw-gradient-to-position)',
+    };
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
-      {/* Navigation */}
-      <nav className="border-b border-gray-200 bg-white sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center gap-4">
-          <Link href={`/profile/from-jd?jd_id=${jdId}`} className="p-2 hover:bg-gray-100 rounded-lg transition">
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
-          </Link>
-          <span className="text-lg font-semibold text-gray-900">Step 3: Select Topics</span>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100 text-slate-900">
+      <header className="relative overflow-hidden bg-white/0">
+        <div className="relative mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10">
+          <div style={{ background: 'linear-gradient(90deg, #e9f8f3 0%, #f6fffc 50%, #ffffff 100%)' }} className="rounded-[10px] border border-slate-200 bg-white/90 p-6 shadow-lg shadow-indigo-200/40">
+            <p className="text-xs uppercase tracking-[0.45em] text-emerald-500">Finalize your prep</p>
+            <h1 className="mt-3 text-3xl font-semibold text-slate-900">Select the interview subjects that matter</h1>
+            <p className="mt-2 text-sm text-slate-500">
+              Jarvis will build practice plans for the subjects you care about, tuned to the JD and your profile.
+            </p>
+          </div>
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Card>
-          <CardHeader>
-            <CardTitle>Choose Interview Topics</CardTitle>
-            <CardDescription>
-              {company && `Based on the ${company} job description, we suggest these topics. Select which areas you want to focus on.`}
-              {!company && 'Select the topics you want to practice for your interview.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              {/* Suggested Subjects Grid */}
-              <div className="space-y-3">
-                {suggestedSubjects.map((subject) => (
-                  <button
-                    key={subject}
-                    onClick={() => toggleSubject(subject)}
-                    className="w-full flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:border-primary hover:bg-primary/5 transition-all"
-                  >
-                    {selectedSubjects.includes(subject) ? (
-                      <CheckCircle2 className="w-6 h-6 text-primary flex-shrink-0" />
-                    ) : (
-                      <Circle className="w-6 h-6 text-gray-300 flex-shrink-0" />
-                    )}
-                    <div className="flex-1 text-left">
-                      <p className="font-medium text-gray-900">{subject}</p>
-                      <p className="text-sm text-gray-600">
-                        {getSubjectDescription(subject)}
-                      </p>
-                    </div>
-                  </button>
-                ))}
+          <section className="flex flex-wrap items-center gap-3 text-sm font-semibold text-slate-500">
+            {['JD Insight', 'Snapshot', 'Profile', 'Subjects'].map((step, idx) => (
+              <div
+                key={step}
+                className="flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 shadow-sm shadow-indigo-100"
+              >
+                <span
+                  className={`flex h-3 w-3 items-center justify-center rounded-full border ${idx <= 2 ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300 bg-white'}`}
+                >
+                  <span className="sr-only">{step}</span>
+                </span>
+                <span className={idx <= 2 ? 'text-indigo-500' : ''}>{step}</span>
               </div>
+            ))}
+          </section>
+        </div>
+      </header>
 
-              {/* Selected Count */}
-              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-900">
-                  {selectedSubjects.length === 0
-                    ? 'Select at least one topic'
-                    : `${selectedSubjects.length} topic${selectedSubjects.length !== 1 ? 's' : ''} selected`}
+      <main className="mx-auto mb-16 mt-0 max-w-6xl px-4 sm:px-5">
+        <Card className="overflow-hidden rounded-[10px] border border-white/20 bg-white shadow-lg shadow-indigo-200/40">
+          <CardContent className="flex flex-col gap-5 px-5 py-5 lg:flex-row lg:gap-5 lg:px-5">
+            <div className="flex-1 space-y-6">
+              <div style={snapshotGradientStyles} className="rounded-[10px] border border-slate-900/10 bg-gradient-to-b from-slate-950/90 via-slate-900/80 to-slate-900/60 p-6 text-white shadow-[0_3px_5px_rgba(15,23,42,0.45)]">
+                <div className="space-y-2">
+                  <p className="text-[10px] uppercase tracking-[0.1em] text-white/100">Job snapshot</p>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-white/100">Confidence</span>
+                    <span className="text-xs rounded-full border border-white/30 px-3 py-1 uppercase tracking-[0.3em] text-white/80">
+                      High
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ letterSpacing: '0px' }} className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+                  <SummaryStat label="Company" value={company || 'Not detected'} highlight />
+                  <SummaryStat label="Role" value={summaryRoleValue} highlight />
+                  <SummaryStat label="Subjects" value={`${selectedSubjects.length || 0} selected`} highlight />
+                  <SummaryStat
+                    label="Plan focus"
+                    value={
+                      selectedSubjects[0]
+                        ? `Starting with ${selectedSubjects[0]}`
+                        : 'Pick a subject'
+                    }
+                    highlight
+                  />
+                </div>
+
+                <div className="mt-6 space-y-2">
+                  <p className="text-xs uppercase tracking-[0.1em] text-white/100">Selected topics</p>
+                  {selectedSubjects.length === 0 ? (
+                    <p className="text-sm text-white/70">No topics yet - pick subjects to see the plan.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 text-[11px] text-white/90">
+                      {selectedSubjects.map(subject => (
+                        <span
+                          key={subject}
+                          className="rounded-[10px] border border-white/20 bg-white/10 px-3 py-1 font-semibold"
+                        >
+                          {subject}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 space-y-6">
+              <div className="space-y-4 rounded-[10px] border border-slate-200 bg-white/80 p-5 shadow-lg shadow-indigo-100/40">
+                <div  style={{ marginBottom: '5px' }} className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.1em] text-indigo-500">Step 3</p>
+                    <h2 className="mt-2 text-xl font-semibold text-slate-900">Choose interview topics</h2>
+                  </div>
+                  {/* <Badge className="px-3 py-1 text-xs uppercase tracking-[0.1em]">
+                    Select
+                  </Badge> */}
+                </div>
+                <p className="text-sm text-slate-500">
+                  {company
+                    ? `Based on ${company}, we recommend these subjects as core preparation pillars.`
+                    : 'Pick the areas where you want Jarvis to guide your practice.'}
                 </p>
-                {selectedSubjects.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {selectedSubjects.map(subject => (
-                      <Badge key={subject} variant="secondary">{subject}</Badge>
-                    ))}
+
+                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-2">
+                  {suggestedSubjects.map(subject => {
+                    const isSelected = selectedSubjects.includes(subject);
+                    const Icon = SUBJECT_ICON_MAP[subject] || defaultIcon;
+                    return (
+                      <button
+                        key={subject}
+                        type="button"
+                        onClick={() => toggleSubject(subject)}
+                        className={`relative flex h-40 flex-col items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 py-5 text-center text-slate-900 transition-shadow duration-200 ${
+                          isSelected
+                            ? 'rounded-[10px] border-emerald-400 bg-emerald-50 shadow-[0_0px_0px_rgba(16,185,129,0.25)]'
+                            : 'hover:border-slate-300 hover:shadow-[0_8px_20px_rgba(15,23,42,0.08)]'
+                        }`}
+                      >
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600">
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        <p className="text-base font-semibold text-slate-900">{subject}</p>
+                        <p className="text-xs tracking-[0.1em] text-slate-400">
+                          {getSubjectDescription(subject)}
+                        </p>
+                        <span
+                          className={`pointer-events-none absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full border transition ${
+                            isSelected
+                              ? 'border-emerald-500 bg-emerald-500 text-white shadow-lg'
+                              : 'border-slate-300 bg-white text-slate-300'
+                          }`}
+                        >
+                          {isSelected ? <Check className="h-4 w-4" /> : <span className="h-3 w-3 rounded-full bg-transparent" />}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* <div className="rounded-[18px] border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                  {selectedSubjects.length === 0
+                    ? 'Select at least one topic to enable the practice plan.'
+                    : `${selectedSubjects.length} topic${selectedSubjects.length !== 1 ? 's' : ''} selected.`}
+                </div> */}
+
+                {error && (
+                  <div className="rounded-[18px] border border-red-300 bg-red-50 p-4 text-sm text-red-700 shadow-sm">
+                    {error}
                   </div>
                 )}
-              </div>
 
-              {/* Error */}
-              {error && (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm text-red-800">{error}</p>
-                </div>
-              )}
-
-              {/* Buttons */}
-              <div className="flex gap-3">
-                <Link href={`/profile/from-jd?jd_id=${jdId}`} className="flex-1">
-                  <Button variant="outline" className="w-full">
-                    Back
+                <div style={{ marginTop: '30px' }} className="flex flex-col gap-5 lg:flex-row">
+                  <Link
+                    href={`/profile/from-jd?jd_id=${jdId}`}
+                    className="flex-1"
+                  >
+                    <Button
+                      variant="outline"
+                      className="w-full rounded-[10px] border border-slate-300 px-4 py-3 font-semibold tracking-[0.1em]"
+                    >
+                      <div className="flex items-center justify-center gap-2">
+                        <ArrowLeft className="h-4 w-4" />
+                        Back
+                      </div>
+                    </Button>
+                  </Link>
+                  <Button
+                    onClick={handleGenerate}
+                    disabled={generating || selectedSubjects.length === 0}
+                    className="flex-1 rounded-[10px] px-6 py-3 text-sm font-semibold tracking-[0.1em] text-white shadow-[0_3px_5px_rgba(79,70,229,0.35)]"
+                    style={{ background: 'linear-gradient(129deg, rgb(97, 95, 255), rgb(173, 70, 255))' }}
+                  >
+                    {generating ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <Loader className="h-4 w-4 animate-spin text-white" />
+                        Generating Plan...
+                      </div>
+                    ) : (
+                      'Generate Interview Plan'
+                    )}
                   </Button>
-                </Link>
-                <Button
-                  onClick={handleGenerate}
-                  disabled={generating || selectedSubjects.length === 0}
-                  className="flex-1"
-                >
-                  {generating ? (
-                    <>
-                      <Loader className="w-4 h-4 mr-2 animate-spin" />
-                      Generating Plan...
-                    </>
-                  ) : (
-                    'Generate Interview Plan'
-                  )}
-                </Button>
-              </div>
+                </div>
 
-              <p className="text-xs text-gray-500 text-center">
-                This will create a personalized study plan based on the job description and your selected topics.
-              </p>
+                <p style={{ margin: '30px 0px 10px 0px' }} className="text-center text-xs tracking-[0.1em] text-slate-400">
+                  A tailored plan will be ready based on your<br></br> selected subjects and the JD.
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -435,4 +555,33 @@ function resolveSubjectSolutionLanguage(
     return 'sql';
   }
   return subject?.trim() || 'sql';
+}
+
+function SummaryStat({
+  label,
+  value,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
+  const wrapperStyle = highlight
+    ? 'border border-white/30 bg-white/10 shadow-[0_12px_40px_rgba(15,23,42,0.6)]'
+    : 'border border-slate-200 bg-white/80 shadow-none';
+
+  return (
+    <div className={`rounded-[16px] px-4 py-3 ${wrapperStyle}`}>
+      <p
+        className={`text-[10px] uppercase tracking-[0.4em] ${
+          highlight ? 'text-white/70' : 'text-slate-400'
+        }`}
+      >
+        {label}
+      </p>
+      <p className={`text-sm font-semibold ${highlight ? 'text-white' : 'text-slate-900'}`}>
+        {value}
+      </p>
+    </div>
+  );
 }

@@ -1,15 +1,18 @@
-/* eslint-disable react/no-unescaped-entities, @typescript-eslint/no-unused-vars */
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, type CSSProperties } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Loader } from 'lucide-react';
-import Link from 'next/link';
+import { Loader } from 'lucide-react';
+import {
+  parseCompanyFromJDText,
+  parseLocationFromJDText,
+  parseRoleFromJDText,
+} from '@/lib/jd-utils';
 
 const EXPERIENCE_LEVELS = ['entry', 'junior', 'mid', 'senior', 'lead'];
 const INDUSTRIES = ['tech', 'finance', 'healthcare', 'education', 'ecommerce', 'other'];
@@ -122,54 +125,6 @@ function capitalizeWords(text?: string) {
     .split(' ')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
-}
-
-function parseRoleFromJDText(text?: string) {
-  if (!text) return '';
-  const firstLine = text.trim().split('\n')[0] || '';
-  if (!firstLine) return '';
-  const cleanedLine = firstLine.replace(/Job Title:/i, '').trim();
-  const segments = cleanedLine
-    .split(/[|–—-]/)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-  return segments[0] || '';
-}
-
-function parseCompanyFromJDText(text?: string) {
-  if (!text) return '';
-  const firstLine = text.trim().split('\n')[0] || '';
-  const segments = firstLine
-    .split(/[|–—-]/)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-
-  if (segments.length > 1) {
-    return segments[1];
-  }
-
-  const matchAbout = text.match(/About\s+([\w\s&.,]+)/i);
-  if (matchAbout?.[1]) {
-    return matchAbout[1].trim();
-  }
-
-  const matchCompany = text.match(/Company[:\s-]+([^\n]+)/i);
-  if (matchCompany?.[1]) {
-    return matchCompany[1].trim();
-  }
-
-  return '';
-}
-
-function buildPreviewText(source?: string, maxWords = 60) {
-  if (!source) return '';
-  const normalized = source.replace(/\s+/g, ' ').trim();
-  if (!normalized) return '';
-  const words = normalized.split(' ');
-  if (words.length <= maxWords) {
-    return normalized;
-  }
-  return `${words.slice(0, maxWords).join(' ')}...`;
 }
 
 function buildSentencePreview(source?: string, maxSentences = 3, maxWords = 140) {
@@ -294,7 +249,6 @@ function ProfileFromJDContent() {
   const jdId = searchParams.get('jd_id');
 
   const [loading, setLoading] = useState(true);
-  const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState('');
   const [jdContent, setJdContent] = useState('');
   const [extractedDetails, setExtractedDetails] = useState<ExtractedJDDetails | null>(null);
@@ -332,8 +286,11 @@ function ProfileFromJDContent() {
     capitalizeWords(extractedDetails?.industry || formData.industry) || 'Not detected';
   const summaryExperience =
     capitalizeWords(extractedDetails?.experience_level || formData.experience_level) || 'Not detected';
+  const parsedLocation = parseLocationFromJDText(previewSource);
   const summaryLocation =
-    (extractedDetails ? buildLocationFromExtract(extractedDetails) : '') || 'Not detected';
+    (extractedDetails ? buildLocationFromExtract(extractedDetails) : '') ||
+    parsedLocation ||
+    'Not detected';
 
   // Fetch JD and extract data on mount
   useEffect(() => {
@@ -358,7 +315,6 @@ function ProfileFromJDContent() {
         setJdContent(jdText);
 
         // Extract data from JD
-        setExtracting(true);
         const extractResponse = await fetch('/api/interview-prep/extract-jd', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -399,12 +355,23 @@ function ProfileFromJDContent() {
         setError(err instanceof Error ? err.message : 'Failed to process job description');
       } finally {
         setLoading(false);
-        setExtracting(false);
       }
     };
 
     fetchAndExtract();
   }, [jdId]);
+
+  const fieldClasses =
+    'w-full rounded-[10px] border border-gray-400 px-3 py-3 mt-2 text-base font-semibold text-grey outline-none transition duration-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/50';
+  const selectClasses =
+    'w-full rounded-[10px] border border-gray-400 px-3 py-1.5 mt-2 text-base font-semibold text-grey outline-none transition duration-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/50';
+  const textareaClasses =
+    'w-full rounded-[10px] border border-gray-400 px-3 py-3 mt-2 text-base font-semibold text-grey outline-none transition duration-200 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/50';
+  const snapshotGradientStyles: CSSProperties & Record<string, string> = {
+    '--tw-gradient-via': 'oklch(0.72 0.13 234.98)',
+    '--tw-gradient-via-stops':
+      'var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), oklch(0.5 0.07 202.57) var(--tw-gradient-via-position), var(--tw-gradient-to) var(--tw-gradient-to-position)',
+  };
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -460,67 +427,115 @@ function ProfileFromJDContent() {
 
   if (loading && !jdContent) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-white to-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
-          <Loader className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-gray-600">Analyzing job description...</p>
+          <Loader className="w-12 h-12 animate-spin mx-auto mb-4 text-indigo-500" />
+          <p className="text-slate-600">Analyzing job description...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
-      {/* Navigation */}
-      <nav className="border-b border-gray-200 bg-white sticky top-0 z-50">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center gap-4">
-          <Link href="/jd/extract" className="p-2 hover:bg-gray-100 rounded-lg transition">
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
-          </Link>
-          <span className="text-lg font-semibold text-gray-900">Step 2: Create Profile</span>
-        </div>
-      </nav>
-
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Card>
-          <CardHeader>
-            <CardTitle>Build Your Interview Profile</CardTitle>
-            <CardDescription>
-              We've extracted some information from the job description. Review and complete your profile.
-            </CardDescription>
-          </CardHeader>
-      <CardContent>
-        {extractedDetails && (
-          <div className="mb-6 rounded-2xl border border-gray-200 bg-white/70 p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Job snapshot
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-100">
+      <header className="relative overflow-hidden">
+        <div className="" />
+        <div className="relative mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10">
+          <div style={{ background: 'linear-gradient(90deg, #e9f8f3 0%, #f6fffc 50%, #ffffff 100%)' }} className="rounded-[10px] border border-slate-200 bg-white/90 p-6 shadow-lg shadow-indigo-200/50">
+            <p className="text-xs uppercase tracking-[0.4em] text-emerald-500">Complete your profile</p>
+            <h1 className="mt-3 text-3xl font-semibold text-slate-900">Tell us about you</h1>
+            <p className="mt-2 text-sm text-slate-500">
+              These insights help Jarvis personalize your interview prep so subjects, projects, and plans
+              align with the JD.
             </p>
-            <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <SummaryStat label="Role" value={summaryRole} />
-              <SummaryStat label="Company" value={summaryCompany} />
-              <SummaryStat label="Industry" value={summaryIndustry} />
-              <SummaryStat label="Experience level" value={summaryExperience} />
-              <SummaryStat label="Location" value={summaryLocation} />
-            </div>
-            {previewText && (
-              <p className="mt-4 text-sm text-gray-600">
-                <span className="font-semibold text-gray-900">Preview:</span>{' '}
-                {previewText}
-              </p>
-            )}
-            {conclusionText && (
-              <p className="mt-3 text-sm text-gray-500">
-                <span className="font-semibold text-gray-900">Conclusion:</span>{' '}
-                {conclusionText}
-              </p>
-            )}
+            {/* <div className="mt-6 rounded-full bg-slate-200/80 p-1">
+              <div className="flex items-center justify-between text-xs font-semibold uppercase text-slate-500">
+                <span className="text-slate-900">Step 2 of 2</span>
+                <span className="text-indigo-500">Profile complete</span>
+              </div>
+              <div className="mt-2 h-2 rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-emerald-500" />
+              </div>
+            </div> */}
           </div>
-        )}
-        <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Email & Role */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+          <section className="flex flex-wrap items-center gap-3 text-sm font-semibold text-slate-500">
+            {['JD Insight', 'Snapshot', 'Profile', 'Subjects'].map((step, idx) => (
+              <div
+                key={step}
+                className="flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 shadow-sm shadow-indigo-100"
+              >
+                <span
+                  className={`flex h-3 w-3 items-center justify-center rounded-full border ${
+                    idx <= 1 ? 'border-indigo-500 bg-indigo-500' : 'border-slate-300 bg-white'
+                  }`}
+                >
+                  <span className="sr-only">{step}</span>
+                </span>
+                <span className={idx <= 1 ? 'text-indigo-500' : ''}>{step}</span>
+              </div>
+            ))}
+          </section>
+        </div>
+      </header>
+
+      <main className="mx-auto mt-[0px] max-w-6xl px-4 pb-16">
+        <Card className="overflow-visible rounded-[10px] border border-white/20 bg-white shadow-lg shadow-indigo-200/40">
+          <CardContent className="flex flex-col gap-6 px-6 pb-10 pt-6 lg:flex-row">
+            <div className="flex-1 space-y-6 lg:max-w-lg">
+            <div style={snapshotGradientStyles}
+              className="flex flex-col gap-1 rounded-[10px] border-slate-900/40 bg-gradient-to-b from-slate-950/80 via-slate-900 to-slate-900/60 p-6 text-white shadow-[0_3px_5px_rgba(15,23,42,0.65)]"
+            >
+
+              <div className="space-y-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.5em] text-white/60">
+                    Job Snapshot
+                  </p>
+                  <div className="flex items-center justify-between text-sm" style={{ margin: '0px 0px 20px 0px' }}>
+                    <span className="font-medium text-white/70">Confidence: High</span>
+                    <span className="font-semibold text-white">JD #{jdId || '—'}</span>
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {extractedDetails ? (
+                    <>
+                      <SummaryStat label="Role" value={summaryRole} highlight />
+                      <SummaryStat label="Company" value={summaryCompany} highlight />
+                      <SummaryStat label="Industry" value={summaryIndustry} highlight />
+                      <SummaryStat label="Experience" value={summaryExperience} highlight />
+                      <SummaryStat label="Location" value={summaryLocation} highlight />
+                    </>
+                  ) : (
+                    <div className="col-span-full flex justify-center">
+                      <Loader className="h-8 w-8 animate-spin text-white" />
+                    </div>
+                  )}
+                </div>
+                {previewText && extractedDetails && (
+                  <p className="text-sm text-white/85 pt-2" style={{ margin: '20px 0px 20px 0px' }}>
+                    <span className="font-semibold text-white">Preview:</span> {previewText}
+                  </p>
+                )}
+                {conclusionText && extractedDetails && (
+                  <p className="text-sm text-white/80" style={{ margin: '0px 0px 20px 0px' }}>
+                    <span className="font-semibold text-white">Conclusion:</span> {conclusionText}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <form
+              onSubmit={handleSubmit}
+              style={{
+                background: 'none',
+              }}
+              className="flex-1 space-y-6 rounded-[10px] border border-white/10 bg-gradient-to-b from-slate-900/90 via-slate-900/80 to-slate-950/90 p-6 shadow-[0px_1px_12px_rgba(15,23,42,0.65)] backdrop-blur-xl"
+            >
+              <div className="grid gap-5 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email *</Label>
+                  <Label htmlFor="email" className="text-slate-400 text-white" style={{ color: '#000' }}>
+                    Email
+                  </Label>
                   <Input
                     id="email"
                     name="email"
@@ -529,10 +544,13 @@ function ProfileFromJDContent() {
                     value={formData.email}
                     onChange={handleChange}
                     required
+                    className={fieldClasses}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="target_role">Target Role *</Label>
+                  <Label htmlFor="target_role" className="text-white text-slate-400" style={{ color: '#000' }}>
+                    Target Role
+                  </Label>
                   <Input
                     id="target_role"
                     name="target_role"
@@ -540,20 +558,22 @@ function ProfileFromJDContent() {
                     value={formData.target_role}
                     onChange={handleChange}
                     required
+                    className={fieldClasses}
                   />
                 </div>
               </div>
 
-              {/* Experience & Industry */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid gap-5 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="experience_level">Experience Level</Label>
+                  <Label htmlFor="experience_level" className="text-slate-400" style={{ color: '#000' }}>
+                    Experience Level
+                  </Label>
                   <select
                     id="experience_level"
                     name="experience_level"
                     value={formData.experience_level}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    className={selectClasses}
                   >
                     {EXPERIENCE_LEVELS.map(level => (
                       <option key={level} value={level}>
@@ -563,13 +583,15 @@ function ProfileFromJDContent() {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="industry">Industry</Label>
+                  <Label htmlFor="industry" className="text-slate-400" style={{ color: '#000' }}>
+                    Industry
+                  </Label>
                   <select
                     id="industry"
                     name="industry"
                     value={formData.industry}
                     onChange={handleChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    className={selectClasses}
                   >
                     {INDUSTRIES.map(ind => (
                       <option key={ind} value={ind}>
@@ -580,20 +602,24 @@ function ProfileFromJDContent() {
                 </div>
               </div>
 
-              {/* Company & Timeline */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid gap-5 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="company_name">Company</Label>
+                  <Label htmlFor="company_name" className="text-slate-400" style={{ color: '#000' }}>
+                    Company
+                  </Label>
                   <Input
                     id="company_name"
                     name="company_name"
                     placeholder="Company name"
                     value={formData.company_name}
                     onChange={handleChange}
+                    className={fieldClasses}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="preparation_timeline_weeks">Prep Timeline (weeks)</Label>
+                  <Label htmlFor="preparation_timeline_weeks" className="text-slate-400" style={{ color: '#000' }}>
+                    Prep Timeline (weeks)
+                  </Label>
                   <Input
                     id="preparation_timeline_weeks"
                     name="preparation_timeline_weeks"
@@ -602,57 +628,55 @@ function ProfileFromJDContent() {
                     max="52"
                     value={formData.preparation_timeline_weeks}
                     onChange={handleChange}
+                    className={fieldClasses}
                   />
                 </div>
               </div>
 
-              {/* Skills */}
               <div className="space-y-2">
-                <Label htmlFor="current_skills">Current Skills (comma-separated)</Label>
+                <Label htmlFor="current_skills" className="text-slate-400" style={{ color: '#000' }}>
+                  Current Skills (comma-separated)
+                </Label>
                 <Textarea
                   id="current_skills"
                   name="current_skills"
                   placeholder="e.g., SQL, Python, Excel"
                   value={formData.current_skills}
                   onChange={handleChange}
-                  className="min-h-20"
+                  className={textareaClasses}
                 />
               </div>
 
-              {/* Notes */}
               <div className="space-y-2">
-                <Label htmlFor="notes">Additional Notes</Label>
+                <Label htmlFor="notes" className="text-slate-400" style={{ color: '#000' }}>
+                  Additional Notes
+                </Label>
                 <Textarea
                   id="notes"
                   name="notes"
                   placeholder="Any additional context..."
                   value={formData.notes}
                   onChange={handleChange}
-                  className="min-h-20"
+                  className={textareaClasses}
                 />
               </div>
 
-              {/* Error */}
               {error && (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm text-red-800">{error}</p>
+                <div className="rounded-2xl border border-red-400/60 bg-red-50/80 p-4 text-sm text-red-700 shadow-lg shadow-red-500/20">
+                  {error}
                 </div>
               )}
 
-              {/* Submit */}
               <Button
+                style={{
+                  background: 'linear-gradient(129deg, #615fff, #ad46ff)',
+                  boxShadow: 'none',
+                }}
                 type="submit"
                 disabled={loading}
-                className="w-full"
+                className="w-full rounded-[10px] px-6 py-3 text-base font-semibold text-white shadow-lg shadow-emerald-500/40 transition hover:scale-[1.01] disabled:brightness-90"
               >
-                {loading ? (
-                  <>
-                    <Loader className="w-4 h-4 mr-2 animate-spin" />
-                    Creating Profile...
-                  </>
-                ) : (
-                  'Continue to Subject Selection'
-                )}
+                {loading ? 'Creating Profile...' : 'Continue to Subject Selection'}
               </Button>
             </form>
           </CardContent>
@@ -662,11 +686,31 @@ function ProfileFromJDContent() {
   );
 }
 
-function SummaryStat({ label, value }: { label: string; value: string }) {
+function SummaryStat({
+  label,
+  value,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
   return (
-    <div>
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="text-sm font-semibold text-gray-900 break-words">{value}</p>
+    <div className="rounded-3xl border border-white/5 bg-white/5 px-4 py-3">
+      <p
+        className={`text-[10px] uppercase tracking-[0.4em] ${
+          highlight ? 'text-white/60' : 'text-slate-300'
+        }`}
+      >
+        {label}
+      </p>
+      <p
+        className={`text-sm font-semibold leading-snug ${
+          highlight ? 'text-white' : 'text-slate-200'
+        }`}
+      >
+        {value}
+      </p>
     </div>
   );
 }
