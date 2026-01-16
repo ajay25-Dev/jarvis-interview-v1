@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars */
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,8 +14,41 @@ import { supabaseBrowser } from '@/lib/supabase-browser';
 
 const DEMO_USER_ID = '550e8400-e29b-41d4-a716-446655440000';
 
+const extractCompanyNameFromDomainText = (text?: string | null) => {
+  if (!text) return null;
+  const normalized = text.replace(/\*\*/g, '').replace(/\r/g, '');
+  const match =
+    normalized.match(/Company\s*Name\s*[:\-–]\s*([^\n]+)/i) ??
+    normalized.match(/Company\s*[:\-–]\s*([^\n]+)/i);
+  return match?.[1]?.trim() || null;
+};
+
+const resolvePlanCompanyName = (planItem: any) => {
+  if (!planItem) return null;
+  const domainKnowledgeText =
+    planItem.domain_knowledge_text ||
+    planItem.plan_content?.subject_prep?.['Domain Knowledge']
+      ?.domain_knowledge_text ||
+    planItem.plan_content?.subject_prep?.['Domain Knowledge']?.header_text;
+  const jobCompany =
+    planItem.job_description?.company_name?.trim() ||
+    planItem.job_description?.industry?.trim();
+  return (
+    jobCompany ||
+    extractCompanyNameFromDomainText(domainKnowledgeText) ||
+    planItem.profile?.company_name?.trim() ||
+    null
+  );
+};
+
+const PAGE_SIZE = 4;
+
 export default function PlanPage() {
-  const [plan, setPlan] = useState<any>(null);
+  const [plans, setPlans] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMorePlans, setHasMorePlans] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedDomain, setExpandedDomain] = useState<number | null>(0);
   const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
@@ -23,7 +56,44 @@ export default function PlanPage() {
     useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [migrationMessage, setMigrationMessage] = useState<string | null>(null);
   const isSavingPlan = migrationStatus === 'loading';
-  const buildAuthHeaders = async () => {
+  const selectedPlan =
+    plans.find((candidate) => candidate.id === selectedPlanId) ||
+    plans[0] ||
+    null;
+  const latestPlanId = useMemo(() => {
+    if (!plans.length) {
+      return null;
+    }
+    let latestId: number | null = null;
+    let latestTime = Number.NEGATIVE_INFINITY;
+    plans.forEach((plan) => {
+      const candidateTime = plan?.created_at
+        ? new Date(plan.created_at).getTime()
+        : Number.NEGATIVE_INFINITY;
+      if (Number.isNaN(candidateTime) || candidateTime <= latestTime) {
+        return;
+      }
+      const candidateId = Number(plan?.id);
+      if (Number.isNaN(candidateId)) {
+        return;
+      }
+      latestTime = candidateTime;
+      latestId = candidateId;
+    });
+    if (latestId === null) {
+      const fallbackId = Number(plans[0]?.id);
+      if (!Number.isNaN(fallbackId)) {
+        latestId = fallbackId;
+      }
+    }
+    return latestId;
+  }, [plans]);
+  const subjectsRef = useRef<HTMLDivElement | null>(null);
+  const [savedPlanIds, setSavedPlanIds] = useState<number[]>([]);
+  const isPlanSaved = Boolean(
+    selectedPlan?.id && savedPlanIds.includes(selectedPlan.id),
+  );
+  const buildAuthHeaders = useCallback(async () => {
     const supabase = supabaseBrowser();
     const {
       data: { session },
@@ -37,22 +107,17 @@ export default function PlanPage() {
       headers['Authorization'] = `Bearer ${session.access_token}`;
     }
     return headers;
-  };
+  }, []);
 
-  const buildExercisesHref = (subject?: string) => {
-    const params = new URLSearchParams();
-    if (plan?.id) {
-      params.append('plan_id', String(plan.id));
+  const buildExercisesHref = () => {
+    if (!selectedPlan?.id) {
+      return '/exercises';
     }
-    if (subject) {
-      params.append('subject', subject);
-    }
-    const query = params.toString();
-    return `/exercises${query ? `?${query}` : ''}`;
+    return `/exercises/plan/${selectedPlan.id}`;
   };
 
   const handleSavePlanData = async () => {
-    if (!plan?.id) {
+    if (!selectedPlan?.id) {
       setMigrationMessage('Plan ID is not available');
       setMigrationStatus('error');
       return;
@@ -63,11 +128,14 @@ export default function PlanPage() {
 
     try {
       const headers = await buildAuthHeaders();
-      const response = await fetch(`/api/interview-prep/plan/${plan.id}/migrate`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ overwrite_existing: true }),
-      });
+      const response = await fetch(
+        `/api/interview-prep/plan/${selectedPlan.id}/migrate`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ overwrite_existing: true }),
+        },
+      );
       const data = await response.json();
       const isSuccess = response.ok && data?.success !== false;
       if (!isSuccess) {
@@ -78,6 +146,19 @@ export default function PlanPage() {
 
       setMigrationStatus('success');
       setMigrationMessage(data?.message || 'Plan data saved to Supabase');
+      setSavedPlanIds((prev) => {
+        if (!selectedPlan?.id) return prev;
+        const next = prev.includes(selectedPlan.id)
+          ? prev
+          : [...prev, selectedPlan.id];
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(
+            'savedPlanIds',
+            JSON.stringify(next),
+          );
+        }
+        return next;
+      });
     } catch (error) {
       console.error('Error saving plan data', error);
       setMigrationStatus('error');
@@ -87,24 +168,97 @@ export default function PlanPage() {
     }
   };
 
-  useEffect(() => {
-    const fetchPlan = async () => {
+  const loadPlans = useCallback(
+    async (pageToLoad = 1, append = false) => {
+      if (append) {
+        setIsLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+
       try {
         const headers = await buildAuthHeaders();
-        const response = await fetch('/api/plan', { headers });
-        if (response.ok) {
-          const data = await response.json();
-          setPlan(data);
+        const response = await fetch(
+          `/api/interview-prep/plans?limit=${PAGE_SIZE}&page=${pageToLoad}`,
+          { headers },
+        );
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data?.error || 'Failed to load plans');
+        }
+
+        const fetchedPlans = Array.isArray(data?.plans) ? data.plans : [];
+        setHasMorePlans(Boolean(data?.hasMore));
+        setPlans((prev) => {
+          if (!append) {
+            return fetchedPlans;
+          }
+          const existingIds = new Set(prev.map((plan) => plan.id));
+          const appendedPlans = fetchedPlans.filter(
+            (plan: any) => !existingIds.has(plan.id),
+          );
+          return [...prev, ...appendedPlans];
+        });
+        setPage(pageToLoad);
+      } catch (error) {
+        console.error('Error fetching plans:', error);
+      } finally {
+        if (append) {
+          setIsLoadingMore(false);
+        } else {
+          setLoading(false);
+        }
+      }
+    },
+    [buildAuthHeaders],
+  );
+
+  useEffect(() => {
+    loadPlans(1, false);
+  }, [loadPlans]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = window.localStorage.getItem('savedPlanIds');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setSavedPlanIds(parsed);
         }
       } catch (error) {
-        console.error('Error fetching plan:', error);
-      } finally {
-        setLoading(false);
+        console.error('Failed to parse saved plan IDs', error);
       }
-    };
-
-    fetchPlan();
+    }
   }, []);
+
+  const handleLoadMorePlans = () => {
+    if (isLoadingMore || !hasMorePlans) {
+      return;
+    }
+    loadPlans(page + 1, true);
+  };
+
+  const handlePlanSelect = (planId: number) => {
+    setSelectedPlanId(planId);
+    window.requestAnimationFrame(() => {
+      subjectsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+
+  useEffect(() => {
+    if (!plans.length) {
+      setSelectedPlanId(null);
+      return;
+    }
+
+    setSelectedPlanId((current) => {
+      if (current && plans.some((item) => item.id === current)) {
+        return current;
+      }
+      return plans[0]?.id ?? null;
+    });
+  }, [plans]);
 
   if (loading) {
     return (
@@ -126,7 +280,7 @@ export default function PlanPage() {
     );
   }
 
-  if (!plan) {
+  if (!selectedPlan) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
         <nav className="border-b border-gray-200 bg-white sticky top-0 z-50">
@@ -157,7 +311,7 @@ export default function PlanPage() {
     );
   }
 
-  const planContent = plan.plan_content || {};
+  const planContent = selectedPlan.plan_content || {};
   const domains = planContent.domains || [];
   const caseStudies = planContent.case_studies || [];
   const estimatedHours = planContent.estimated_hours || 0;
@@ -206,7 +360,7 @@ const DomainKnowledgeMarkdown = ({ text }: { text: string }) => (
 );
   const subjectPrep = planContent.subject_prep || {};
   const planDomainKnowledgeText =
-    plan.domain_knowledge_text ||
+    selectedPlan.domain_knowledge_text ||
     subjectPrep['Domain Knowledge']?.domain_knowledge_text ||
     null;
 
@@ -233,6 +387,92 @@ const DomainKnowledgeMarkdown = ({ text }: { text: string }) => (
           </p>
         </div>
 
+        {plans.length > 0 && (
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Saved plans
+                </p>
+                <p className="text-sm text-gray-600">
+                  Switch between companies to review each plan.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-3">
+              {plans.map((planItem, index) => {
+                const planCompanyName = resolvePlanCompanyName(planItem);
+                const planLabel =
+                  planCompanyName ||
+                  planItem.profile?.target_role ||
+                  `Plan ${planItem.id}`;
+                const createdAtLabel = planItem.created_at
+                  ? new Date(planItem.created_at).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })
+                  : null;
+                const planRoleLabel =
+                  planItem.job_description?.role_title?.trim() ||
+                  planItem.profile?.target_role;
+                const secondaryLabel = [planRoleLabel, createdAtLabel]
+                  .filter(Boolean)
+                  .join(' - ');
+                const isActive = planItem.id === selectedPlan?.id;
+                const isLatest = planItem.id === latestPlanId;
+                return (
+                  <button
+                    key={planItem.id}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => handlePlanSelect(planItem.id)}
+                    className={`w-full min-w-[220px] rounded-2xl border px-4 py-3 text-left transition md:w-auto ${
+                      isActive
+                        ? 'border-transparent bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg'
+                        : 'border-gray-200 bg-white text-gray-800 hover:border-blue-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold">{planLabel}</span>
+                      {isLatest && (
+                        <Badge
+                          variant="outline"
+                          className={`text-[11px] ${
+                            isActive ? 'border-white/60 text-white/80' : ''
+                          }`}
+                        >
+                          Latest
+                        </Badge>
+                      )}
+                    </div>
+                    {secondaryLabel && (
+                      <p
+                        className={`text-[11px] ${
+                          isActive ? 'text-white/80' : 'text-gray-500'
+                        }`}
+                      >
+                        {secondaryLabel}
+                      </p>
+                    )}
+                  </button>
+                );
+              })}
+              {hasMorePlans && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="self-center min-w-[220px] rounded-2xl border-dashed border border-blue-200 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-blue-600 transition hover:border-blue-300 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={handleLoadMorePlans}
+                  disabled={isLoadingMore}
+                >
+                  {isLoadingMore ? 'Loading plans…' : 'Load more plans'}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Quick Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card>
@@ -241,7 +481,7 @@ const DomainKnowledgeMarkdown = ({ text }: { text: string }) => (
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Total Time</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {estimatedHours}h
+                    {estimatedHours} Hours
                   </p>
                 </div>
                 <Clock className="w-8 h-8 text-blue-500 opacity-20" />
@@ -288,46 +528,66 @@ const DomainKnowledgeMarkdown = ({ text }: { text: string }) => (
           </div>
         )} */}
 
-        <Card className="mb-8 border border-blue-100 bg-blue-50">
-          <CardHeader>
-            <CardTitle className="text-lg">Save plan data</CardTitle>
-            <CardDescription>
-              Persist the structured subjects, questions, answers, and datasets from this plan into Supabase so practice tables stay in sync.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <p className="text-sm text-gray-700 max-w-3xl">
-                Make sure every subject, case study, and related answer is stored in the practice tables so you can start exercises immediately.
-              </p>
-              <Button
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-                onClick={handleSavePlanData}
-                disabled={isSavingPlan}
-              >
-                {isSavingPlan ? 'Saving plan data...' : 'Save plan data'}
-              </Button>
-            </div>
-            {migrationMessage && (
-              <p
-                className={`text-sm ${
-                  migrationStatus === 'success'
-                    ? 'text-emerald-700'
-                    : 'text-rose-600'
-                }`}
-              >
-                {migrationMessage}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        {!isPlanSaved ? (
+          <Card className="mb-8 border border-blue-100 bg-blue-50">
+            <CardHeader>
+              <CardTitle className="text-lg">Save plan data</CardTitle>
+              <CardDescription>
+                Persist the structured subjects, questions, answers, and datasets from this plan into Supabase so practice tables stay in sync.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <p className="text-sm text-gray-700 max-w-3xl">
+                  Make sure every subject, case study, and related answer is stored in the practice tables so you can start exercises immediately.
+                </p>
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={handleSavePlanData}
+                  disabled={isSavingPlan}
+                >
+                  {isSavingPlan ? 'Saving plan data...' : 'Save plan data'}
+                </Button>
+              </div>
+              {migrationMessage && (
+                <p
+                  className={`text-sm ${
+                    migrationStatus === 'success'
+                      ? 'text-emerald-700'
+                      : 'text-rose-600'
+                  }`}
+                >
+                  {migrationMessage}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="mb-8 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">
+            {migrationMessage || 'Plan data already saved for this plan.'}
+          </div>
+        )}
 
         {/* Subjects */}
         {subjects.length > 0 && (
-            <div className="mb-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Covered Subjects</h2>
-            <p className="text-gray-600 mb-6">Comprehensive topics with detailed learning paths and case studies</p>
-            
+          <div ref={subjectsRef} className="mb-8">
+            <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Covered Subjects</h2>
+                <p className="text-gray-600">Comprehensive topics with detailed learning paths and case studies</p>
+              </div>
+              {selectedPlan?.id && (
+                <Link href={buildExercisesHref()} target="_blank" rel="noreferrer">
+                  <Button
+                    variant="outline"
+                    className="flex items-center gap-1 border-blue-200 bg-white px-4 py-2 text-xs uppercase tracking-wide text-blue-700 shadow-sm hover:border-blue-300"
+                  >
+                    <span>Start Practice</span>
+                    <ArrowLeft className="w-3 h-3 rotate-180" />
+                  </Button>
+                </Link>
+              )}
+            </div>
             <div className="space-y-4">
               {subjects.map((subject: string) => {
                 const relatedDomain = domains.find(
@@ -423,10 +683,10 @@ const DomainKnowledgeMarkdown = ({ text }: { text: string }) => (
 
                     {/* Expanded Content */}
                     {isExpanded && (
-                      <div className="border-t border-gray-200 bg-gray-50">
+                      <div className="border-gray-200 bg-gray-50">
                         <div className="p-6 space-y-8">
                           {/* Subject Actions */}
-                          {subject?.trim().toLowerCase() !== 'domain knowledge' && (
+                          {/* {subject?.trim().toLowerCase() !== 'domain knowledge' && (
                             <div className="flex justify-end">
                               <Link href={buildExercisesHref(subject)} target="_blank" rel="noopener noreferrer">
                                 <Button className="bg-blue-600 hover:bg-blue-700 text-white">
@@ -435,10 +695,10 @@ const DomainKnowledgeMarkdown = ({ text }: { text: string }) => (
                                 </Button>
                               </Link>
                             </div>
-                          )}
+                          )} */}
 
                           {headerText && (
-                            <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-sm text-gray-700">
+                            <div className="bg-blue-50 border-blue-100 rounded-lg px-4 py-3 text-sm text-gray-700">
                               {headerText}
                             </div>
                           )}
@@ -649,7 +909,7 @@ const DomainKnowledgeMarkdown = ({ text }: { text: string }) => (
                           )}
 
                           {hasDatasetInfo && (
-                            <div className="space-y-4 border-t border-gray-200 pt-4">
+                            <div className="space-y-4 border-gray-200 pt-4">
                               {/* <h4 className="text-sm font-semibold text-gray-900 mb-2 uppercase tracking-wider flex items-center gap-2">
                                 <BookOpen className="w-4 h-4 text-blue-600" />
                                 Dataset & Resources
@@ -774,15 +1034,6 @@ const DomainKnowledgeMarkdown = ({ text }: { text: string }) => (
                             </div>
                           )}
 
-                          {/* Practice Button */}
-                          <Link href={buildExercisesHref()} className="block">
-                            <Button className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold">
-                              <span className="flex items-center justify-center gap-2">
-                                <span>Start Practice Exercises</span>
-                                <ArrowLeft className="w-4 h-4 rotate-180" />
-                              </span>
-                            </Button>
-                          </Link>
                         </div>
                       </div>
                     )}

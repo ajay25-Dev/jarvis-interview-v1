@@ -315,10 +315,25 @@ function ProfileFromJDContent() {
         setJdContent(jdText);
 
         // Extract data from JD
+        const extractionPayload: Record<string, unknown> = {
+          job_description: jdText,
+        };
+        if (jdId) {
+          extractionPayload.jd_id = Number(jdId);
+        }
+        const detectedCompany = parseCompanyFromJDText(jdText);
+        if (detectedCompany) {
+          extractionPayload.company_name = detectedCompany;
+        }
+        const detectedIndustry = normalizeIndustry(undefined, jdText);
+        if (detectedIndustry) {
+          extractionPayload.industry = detectedIndustry;
+        }
+
         const extractResponse = await fetch('/api/interview-prep/extract-jd', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ job_description: jdText }),
+          body: JSON.stringify(extractionPayload),
         });
 
         if (!extractResponse.ok) {

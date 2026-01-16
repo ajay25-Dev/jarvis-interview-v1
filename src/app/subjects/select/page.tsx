@@ -279,14 +279,7 @@ const [suggestedSubjects, setSuggestedSubjects] = useState<string[]>(ensureDomai
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-white to-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-gray-600">Loading subjects...</p>
-        </div>
-      </div>
-    );
+    return <LoadingFallback />;
   }
 
     const snapshotGradientStyles: CSSProperties & Record<string, string> = {
@@ -486,8 +479,9 @@ function LoadingFallback() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-gray-50 flex items-center justify-center">
       <div className="text-center">
-        <Loader className="w-8 h-8 animate-spin mx-auto mb-4 text-primary" />
-        <p className="text-gray-600">Loading subjects...</p>
+        <Loader className="w-10 h-10 animate-spin mx-auto mb-4 text-indigo-500" />
+        <p className="text-xm text-slate-600">Loading subjects...</p>
+        {/* <p className="text-xs uppercase tracking-[0.4em] text-slate-400 mt-2">Step 3 of 3</p> */}
       </div>
     </div>
   );

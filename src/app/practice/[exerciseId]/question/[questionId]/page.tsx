@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   ArrowLeft,
@@ -52,13 +52,79 @@ interface Exercise {
   created_at?: string;
 }
 
+interface PlanSubjectEntry {
+  subject?: string;
+  business_context?: string;
+  header_text?: string;
+  summary?: string;
+  case_studies?: Array<{ business_context?: string }>;
+}
+
+type SubjectPrepIndex = Record<string, PlanSubjectEntry>;
+
 type RawDataset = Dataset & { data?: string | JsonObject[] };
+
+const normalizeSubjectName = (value?: string) => {
+  if (!value) return '';
+  return value.trim().toLowerCase();
+};
+
+const findPlanSubjectData = (
+  subject?: string,
+  subjectPrep?: SubjectPrepIndex,
+) => {
+  if (!subject || !subjectPrep) {
+    return undefined;
+  }
+  const normalizedSubject = normalizeSubjectName(subject);
+  if (!normalizedSubject) {
+    return undefined;
+  }
+
+  return Object.entries(subjectPrep).find(([key, value]) => {
+    if (!value) {
+      return false;
+    }
+    const candidateSubject =
+      typeof value.subject === 'string' ? value.subject : key;
+    const normalizedCandidate = normalizeSubjectName(candidateSubject);
+    if (!normalizedCandidate) {
+      return false;
+    }
+    return (
+      normalizedCandidate === normalizedSubject ||
+      normalizedSubject.includes(normalizedCandidate) ||
+      normalizedCandidate.includes(normalizedSubject)
+    );
+  })?.[1];
+};
+
+const getPlanContext = (subjectData?: PlanSubjectEntry) => {
+  if (!subjectData) {
+    return '';
+  }
+  const contextCandidates = [
+    subjectData.business_context,
+    subjectData.case_studies?.[0]?.business_context,
+  ];
+  for (const candidate of contextCandidates) {
+    if (typeof candidate === 'string') {
+      const trimmed = candidate.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+  return '';
+};
 
 function PracticeWorkspaceContent() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const exerciseId = params.exerciseId as string;
   const questionId = params.questionId as string;
+  const planIdFromSearch = searchParams.get('plan_id');
 
   const {
     setCurrentQuestion,
@@ -81,11 +147,20 @@ function PracticeWorkspaceContent() {
   const [error, setError] = useState('');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const planContextRef = useRef<{ planId: string | null; subject: string | null }>({
+    planId: null,
+    subject: null,
+  });
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`/api/interview-prep/practice-exercises`);
+        const queryString = planIdFromSearch
+          ? `?plan_id=${encodeURIComponent(planIdFromSearch)}`
+          : '';
+        const response = await fetch(
+          `/api/interview-prep/practice-exercises${queryString}`,
+        );
         if (!response.ok) {
           throw new Error('Failed to fetch exercises');
         }
@@ -146,7 +221,70 @@ function PracticeWorkspaceContent() {
     if (exerciseId && questionId) {
       fetchData();
     }
-  }, [exerciseId, questionId, setCurrentQuestion, setLanguage, setCode]);
+  }, [exerciseId, questionId, planIdFromSearch, setCurrentQuestion, setLanguage, setCode]);
+
+  useEffect(() => {
+    if (!planIdFromSearch || !exercise?.subject) {
+      return;
+    }
+    if (
+      planContextRef.current.planId === planIdFromSearch &&
+      planContextRef.current.subject === exercise.subject
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const loadPlanContext = async () => {
+      try {
+        const response = await fetch(
+          `/api/plan?plan_id=${encodeURIComponent(planIdFromSearch)}`,
+          {
+            signal: controller.signal,
+          },
+        );
+        if (!response.ok) {
+          return;
+        }
+        const planData = await response.json();
+        const subjectPrep = (planData?.plan_content?.subject_prep || {}) as SubjectPrepIndex;
+        const matchedSubject = findPlanSubjectData(exercise.subject, subjectPrep);
+        const planBusinessContext = getPlanContext(matchedSubject);
+        if (!planBusinessContext) {
+          return;
+        }
+        setExercise((prev) =>
+          prev ? { ...prev, business_context: planBusinessContext } : prev,
+        );
+        setQuestion((prev) => {
+          if (!prev) {
+            return prev;
+          }
+          if (prev.business_context && prev.business_context.trim().length > 0) {
+            return prev;
+          }
+          return { ...prev, business_context: planBusinessContext };
+        });
+      } catch (error) {
+        if ((error as { name?: string })?.name === 'AbortError') {
+          return;
+        }
+        console.error('Failed to load plan business context:', error);
+      } finally {
+        planContextRef.current = {
+          planId: planIdFromSearch,
+          subject: exercise.subject,
+        };
+      }
+    };
+
+    loadPlanContext();
+
+    return () => {
+      controller.abort();
+    };
+  }, [planIdFromSearch, exercise?.subject]);
 
   const [timeSpentSeconds, setTimeSpentSeconds] = useState(0);
 
@@ -170,11 +308,22 @@ function PracticeWorkspaceContent() {
     });
   }, [exercise]);
 
+  const buildQuestionHref = useCallback(
+    (targetQuestionId: string) => {
+      const basePath = `/practice/${exerciseId}/question/${targetQuestionId}`;
+      if (!planIdFromSearch) {
+        return basePath;
+      }
+      return `${basePath}?plan_id=${encodeURIComponent(planIdFromSearch)}`;
+    },
+    [exerciseId, planIdFromSearch],
+  );
+
   const handlePreviousQuestion = () => {
     if (currentQuestionIndex > 0) {
       const prevQuestion = questionList[currentQuestionIndex - 1];
       if (prevQuestion) {
-        router.push(`/practice/${exerciseId}/question/${prevQuestion.id}`);
+        router.push(buildQuestionHref(prevQuestion.id));
       }
     }
   };
@@ -183,7 +332,7 @@ function PracticeWorkspaceContent() {
     if (currentQuestionIndex < questionList.length - 1) {
       const nextQuestion = questionList[currentQuestionIndex + 1];
       if (nextQuestion) {
-        router.push(`/practice/${exerciseId}/question/${nextQuestion.id}`);
+        router.push(buildQuestionHref(nextQuestion.id));
       }
     }
   };

@@ -197,6 +197,9 @@ export async function GET(request: NextRequest) {
     if (subject) {
       query = query.ilike('name', `%${subject}%`);
     }
+    if (planId) {
+      query = query.ilike('name', `%Plan ${planId}%`);
+    }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const { data: exercises, error } = await query
@@ -241,7 +244,7 @@ export async function GET(request: NextRequest) {
           questions: questions || [],
           dataset_description: datasets?.[0]?.description,
           datasets: datasets || [],
-          business_context: exercise.business_context,
+          business_context: exercise.description,
           data_creation_sql: exercise.data_creation_sql,
         });
       }

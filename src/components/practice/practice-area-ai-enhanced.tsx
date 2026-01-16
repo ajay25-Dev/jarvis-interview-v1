@@ -388,14 +388,23 @@ export function PracticeAreaAIEnhanced({
 
 
 
+  const normalizeStringValue = (value?: unknown) =>
+    typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+
   const questionBusinessContext =
-    typeof businessContext === 'string'
-      ? businessContext
-      : typeof currentQuestion?.content?.business_context === 'string'
-      ? currentQuestion.content.business_context
-      : typeof (currentQuestion as { business_context?: string } | null)?.business_context === 'string'
-      ? (currentQuestion as { business_context?: string }).business_context
-      : '';
+    normalizeStringValue(currentQuestion?.content?.business_context) ??
+    normalizeStringValue(
+      (currentQuestion as { business_context?: string } | null)?.business_context,
+    ) ??
+    normalizeStringValue(businessContext) ??
+    '';
+
+  const questionCaseStudyTitle =
+    normalizeStringValue(currentQuestion?.content?.case_study_title) ??
+    normalizeStringValue(
+      (currentQuestion as { case_study_title?: string } | null)?.case_study_title,
+    ) ??
+    '';
 
 
 
@@ -1418,7 +1427,7 @@ return (
 
                 <h2 className="text-sm font-semibold text-gray-900">
 
-                  {exerciseTitle || 'Practice Exercise (AI-Powered)'}
+                  {questionCaseStudyTitle}
 
                 </h2>
 
@@ -1426,9 +1435,9 @@ return (
 
                   <span>{getLanguageDisplayName(resolvedExerciseType)}</span>
 
-                  <span>•</span>
+                  {/* <span>•</span> */}
 
-                  <span>{exerciseDifficulty || 'Medium'}</span>
+                  {/* <span>{exerciseDifficulty || 'Medium'}</span> */}
 
                   <Brain className="w-4 h-4 text-blue-600 ml-2" />
 
@@ -1472,31 +1481,29 @@ return (
 
           <div className="flex-1 overflow-y-auto p-6">
 
-            <div className="prose prose-sm max-w-none">
+              <div className="prose prose-sm max-w-none">
 
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
 
-                Question {activeQuestionIndex + 1} of {questions.length}
+                  Question {activeQuestionIndex + 1} of {questions.length}
 
-              </h3>
+                </h3>
 
+                {questionBusinessContext && (
 
+                  <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/70 p-4 text-sm text-blue-900">
 
-              {questionBusinessContext && (
+                    <p className="text-[10px] uppercase tracking-[0.3em] text-blue-500 mb-1">Business Context</p>
 
-                <div className="mb-4 rounded-xl border border-blue-100 bg-blue-50/70 p-4 text-sm text-blue-900">
+                    <p className="text-sm leading-relaxed text-blue-900 font-medium">
 
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-blue-500 mb-1">Business Context</p>
+                      {questionBusinessContext}
 
-                  <p className="text-sm leading-relaxed text-blue-900 font-medium">
+                    </p>
 
-                    {questionBusinessContext}
+                  </div>
 
-                  </p>
-
-                </div>
-
-              )}
+                )}
 
               {currentQuestion.case_study_context && (
 
