@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { getDemoUserId } from '@/lib/demo-user';
 
 const AI_SERVICE_URL_RAW =
   process.env.NEXT_PUBLIC_AI_SERVICE_URL ||
@@ -67,7 +68,7 @@ function resolveUserId(request: NextRequest) {
   if (process.env.DEV_INTERVIEW_PREP_USER_ID) {
     return process.env.DEV_INTERVIEW_PREP_USER_ID;
   }
-  return '00000000-0000-0000-0000-000000000000';
+  return getDemoUserId();
 }
 
 async function persistChatMessages(entries: Array<{

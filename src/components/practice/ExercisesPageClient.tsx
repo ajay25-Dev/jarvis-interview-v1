@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { supabaseBrowser } from '@/lib/supabase-browser';
 import { JsonObject } from '@/components/practice/types';
 import { getDemoUserId } from '@/lib/demo-user';
+import { buildAuthHeaders as fetchAuthHeaders } from '@/lib/build-auth-headers';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -56,6 +57,7 @@ interface SubjectMetadata {
   normalized: string;
   header_text?: string;
   business_context?: string;
+  caseStudiesCount?: number;
 }
 
 interface PlanSubjectData {
@@ -64,6 +66,7 @@ interface PlanSubjectData {
   business_context?: string | null;
   domain_knowledge_text?: string | null;
   summary?: string | null;
+  case_studies?: unknown[];
 }
 
 type SubjectPrepIndex = Record<string, PlanSubjectData>;
@@ -276,19 +279,7 @@ export function ExercisesPageClient({ planIdOverride }: ExercisesPageClientProps
   const isPlanPage = Boolean(planIdParam);
   const isPlanSubjectsLoading = isPlanPage && planSubjects === null;
 
-  const buildAuthHeaders = useCallback(async () => {
-    const supabase = supabaseBrowser();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const headers: Record<string, string> = {};
-    const userIdHeader = session?.user?.id || getDemoUserId();
-    headers['x-user-id'] = userIdHeader;
-    if (session?.access_token) {
-      headers['Authorization'] = `Bearer ${session.access_token}`;
-    }
-    return headers;
-  }, []);
+  const buildAuthHeaders = useCallback(fetchAuthHeaders, []);
 
   const domainKnowledgeHeadingLabel = domainKnowledgeHeading || 'Domain Knowledge Brief';
 
@@ -450,6 +441,35 @@ export function ExercisesPageClient({ planIdOverride }: ExercisesPageClientProps
       .join('\n');
   };
 
+  const extractTopicsFromText = (value?: string) => {
+    if (!value) return [];
+    const sanitized = value.replace(/\r/g, '').replace(/\u2028/g, ' ');
+    const regex = /topic(?:s)?\s*:\s*/i;
+    const match = regex.exec(sanitized);
+    if (!match) return [];
+
+    const startIndex = match.index + match[0].length;
+    const nextSectionIndex = sanitized.slice(startIndex).search(/\[/);
+    const section =
+      nextSectionIndex >= 0
+        ? sanitized.slice(startIndex, startIndex + nextSectionIndex)
+        : sanitized.slice(startIndex);
+
+    const bulletPattern = /[-•]\s*([^-\n\r\[\]]+)/g;
+    const foundTopics = Array.from(section.matchAll(bulletPattern))
+      .map((match) => match[1]?.trim())
+      .filter((topic): topic is string => Boolean(topic && topic.length > 0));
+    if (foundTopics.length > 0) {
+      return foundTopics;
+    }
+
+    const fallbackTopics = section
+      .split(/[\n\r,]+/)
+      .map((part) => part.replace(/^[-•\s]+/, '').trim())
+      .filter((topic) => topic.length > 0);
+    return fallbackTopics;
+  };
+
   const fetchExercises = useCallback(async () => {
     try {
       setLoading(true);
@@ -535,6 +555,9 @@ export function ExercisesPageClient({ planIdOverride }: ExercisesPageClientProps
             normalized: normalizeSubjectName(subjectName),
             header_text: subjectData?.header_text?.toString().trim(),
             business_context: subjectData?.business_context?.toString().trim(),
+            caseStudiesCount: Array.isArray(subjectData?.case_studies)
+              ? subjectData.case_studies.length
+              : undefined,
           };
         });
 
@@ -662,13 +685,22 @@ export function ExercisesPageClient({ planIdOverride }: ExercisesPageClientProps
                     <p className="text-xs uppercase tracking-[0.1em] text-indigo-500">Extend plan</p>
                     <p className="text-sm font-semibold text-gray-900">Add a new subject to this plan</p>
                   </div>
-                  <Button
-                    variant="outline"
-                    className="text-sm text-indigo-600"
-                    onClick={() => setAddingSubject((prev) => !prev)}
-                  >
-                    {addingSubject ? 'Cancel' : 'Add subject'}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {planIdParam && (
+                      <Button asChild variant="secondary" size="sm">
+                        <Link href={`/exercises/plan/${planIdParam}/progress`}>
+                          View progress
+                        </Link>
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      className="text-sm text-indigo-600"
+                      onClick={() => setAddingSubject((prev) => !prev)}
+                    >
+                      {addingSubject ? 'Cancel' : 'Add subject'}
+                    </Button>
+                  </div>
                 </div>
                 {addingSubject && (
                   <div className="space-y-4">
@@ -751,10 +783,11 @@ export function ExercisesPageClient({ planIdOverride }: ExercisesPageClientProps
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-6">
-            <div className="flex gap-5 overflow-x-auto pb-3">
+      <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               {filteredExercises.map((exerciseSet) => {
                 const displaySubjectName = formatSubjectTitle(exerciseSet.subject);
+                const subjectMeta = findSubjectMetadata(exerciseSet.subject);
                 const isProblemSolving = isProblemSolvingSubject(exerciseSet.subject);
                 const SubjectIcon = getSubjectIcon(exerciseSet.subject);
                 const datasetReady =
@@ -806,7 +839,9 @@ export function ExercisesPageClient({ planIdOverride }: ExercisesPageClientProps
                             {displaySubjectName}
                           </h3>
                           <p className="text-sm text-gray-500">
-                            {exerciseSet.questions.length} curated questions
+                            {isProblemSolving
+                              ? `${subjectMeta?.caseStudiesCount ?? exerciseSet.questions.length} case studies`
+                              : `${exerciseSet.questions.length} curated questions`}
                           </p>
                         </div>
                         {!isProblemSolving && (
@@ -961,71 +996,101 @@ export function ExercisesPageClient({ planIdOverride }: ExercisesPageClientProps
                           </div>
                         )}
 
-                        {currentExerciseSet.questions.map((question, idx) => (
-                          <Card
-                            key={question.id}
-                            className="border-gray-200 hover:border-primary/50 transition-colors"
-                          >
-                            <CardHeader className="pb-3">
-                              <div className="flex items-start justify-between gap-4">
-                                <div className="flex-1">
-                                  <CardTitle className="text-base">Question {idx + 1}</CardTitle>
-                                  <p className="text-sm text-gray-600 mt-1 whitespace-pre-line">
-                                    {normalizeQuestionText(question.text)}
-                                  </p>
-                                </div>
-                                <div className="flex flex-col gap-1 items-end">
-                                  <Badge className={getDifficultyColor(question.difficulty)}>
-                                    {question.difficulty}
-                                  </Badge>
-                                  {question.topics && question.topics.length > 0 && (
-                                    <Badge variant="outline" className="text-xs">
-                                      {question.topics.length} topics
+                        {currentExerciseSet.questions.map((question, idx) => {
+                          const normalizedText = normalizeQuestionText(question.text);
+                          const extractedTopics = extractTopicsFromText(normalizedText);
+                          const explicitTopics = Array.isArray(question.topics)
+                            ? question.topics
+                            : [];
+                          const topicsForDisplay =
+                            extractedTopics.length > 0
+                              ? extractedTopics
+                              : explicitTopics;
+                          const uniqueTopics = Array.from(new Set(topicsForDisplay));
+                          const hasTopics = uniqueTopics.length > 0;
+
+                          return (
+                            <Card
+                              key={question.id}
+                              className="border-gray-200 hover:border-primary/50 transition-colors"
+                            >
+                              <CardHeader className="pb-3">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex-1">
+                                    <CardTitle className="text-base">Question {idx + 1}</CardTitle>
+                                    <p className="text-sm text-gray-600 mt-1 whitespace-pre-line">
+                                      {normalizedText}
+                                    </p>
+                                    {hasTopics && (
+                                      <div className="mt-3 text-sm text-gray-600">
+                                        <p className="text-xs font-medium text-gray-500 uppercase tracking-[0.3em]">
+                                          Ques topic
+                                        </p>
+                                        <ul className="list-disc list-inside space-y-1 mt-1 text-[13px]">
+                                          {uniqueTopics.map((topic) => (
+                                            <li key={topic}>{topic}</li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex flex-col gap-1 items-end">
+                                    <Badge className={getDifficultyColor(question.difficulty)}>
+                                      {question.difficulty}
                                     </Badge>
-                                  )}
+                                    {hasTopics && (
+                                      <Badge variant="outline" className="text-xs">
+                                        {uniqueTopics.length} topic
+                                        {uniqueTopics.length !== 1 ? 's' : ''}
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="flex gap-3 mt-4">
-                                {currentExerciseSet.subject.toLowerCase().includes('problem solving') ? (
-                                  <Button size="sm" asChild className={solveButtonClassName}>
-                                    <a
-                                      href={(() => {
-                                        const params = new URLSearchParams();
-                                        if (planIdParam) params.set('plan_id', planIdParam);
-                                        if (currentExerciseSet.id) params.set('exercise_id', currentExerciseSet.id);
-                                        if (question.id) params.set('question_id', question.id);
-                                        const query = params.toString();
-                                        return `/problem-solving/practice${query ? `?${query}` : ''}`;
-                                      })()}
+                              </CardHeader>
+                              <CardContent>
+                                <div className="flex gap-3 mt-4">
+                                  {currentExerciseSet.subject
+                                    .toLowerCase()
+                                    .includes('problem solving') ? (
+                                    <Button size="sm" asChild className={solveButtonClassName}>
+                                      <a
+                                        href={(() => {
+                                          const params = new URLSearchParams();
+                                          if (planIdParam) params.set('plan_id', planIdParam);
+                                          if (currentExerciseSet.id)
+                                            params.set('exercise_id', currentExerciseSet.id);
+                                          if (question.id) params.set('question_id', question.id);
+                                          const query = params.toString();
+                                          return `/problem-solving/practice${query ? `?${query}` : ''}`;
+                                        })()}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                      >
+                                        <Code2 className="w-4 h-4" />
+                                        Solve Case Study
+                                      </a>
+                                    </Button>
+                                  ) : (
+                                    <Link
+                                      href={
+                                        planIdParam
+                                          ? `/practice/${currentExerciseSet.id}/question/${question.id}?plan_id=${planIdParam}`
+                                          : `/practice/${currentExerciseSet.id}/question/${question.id}`
+                                      }
                                       target="_blank"
                                       rel="noopener noreferrer"
                                     >
-                                      <Code2 className="w-4 h-4" />
-                                      Solve Case Study
-                                    </a>
-                                  </Button>
-                                ) : (
-                                  <Link
-                                    href={
-                                      planIdParam
-                                        ? `/practice/${currentExerciseSet.id}/question/${question.id}?plan_id=${planIdParam}`
-                                        : `/practice/${currentExerciseSet.id}/question/${question.id}`
-                                    }
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  >
-                                    <Button size="sm" className={solveButtonClassName}>
-                                      <Code2 className="w-4 h-4" />
-                                      Solve Question
-                                    </Button>
-                                  </Link>
-                                )}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
+                                      <Button size="sm" className={solveButtonClassName}>
+                                        <Code2 className="w-4 h-4" />
+                                        Solve Question
+                                      </Button>
+                                    </Link>
+                                  )}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
                       </div>
                     </CardContent>
                   </Card>

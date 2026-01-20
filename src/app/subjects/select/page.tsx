@@ -77,7 +77,7 @@ function SelectSubjectsContent() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
-const [suggestedSubjects, setSuggestedSubjects] = useState<string[]>(ensureDomainKnowledge(DEFAULT_SUBJECTS));
+  const [suggestedSubjects, setSuggestedSubjects] = useState<string[]>(ensureDomainKnowledge(DEFAULT_SUBJECTS));
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>(ensureDomainKnowledge(DEFAULT_SUBJECTS));
   const [company, setCompany] = useState('');
   const [profile, setProfile] = useState<{
