@@ -213,7 +213,7 @@ export function PlanProgressClient({ planId }: PlanProgressClientProps) {
                       Completion
                     </p>
                     <p className="text-4xl font-bold text-gray-900">
-                      {progress.stats.completionPercentage.toFixed(1)}%
+                      {displayedOverallCompletion(progress, formattedSubjects).toFixed(1)}%
                     </p>
                     <p className="text-sm text-slate-400 mt-1">
                       {progress.stats.completedQuestions} / {progress.stats.totalQuestions}{' '}
@@ -227,7 +227,18 @@ export function PlanProgressClient({ planId }: PlanProgressClientProps) {
                   </div>
                   <div className="flex-1">
                     <Progress
-                      value={Math.min(Math.max(progress.stats.completionPercentage, 0), 100)}
+                      value={Math.min(
+                        Math.max(
+                          displayedOverallCompletion(progress, formattedSubjects),
+                          0,
+                        ),
+                        100,
+                      )}
+                      indicatorClassName={
+                        displayedOverallCompletion(progress, formattedSubjects) > 0
+                          ? undefined
+                          : 'bg-slate-200'
+                      }
                       className="h-2 rounded-full"
                     />
                   </div>
@@ -284,12 +295,20 @@ export function PlanProgressClient({ planId }: PlanProgressClientProps) {
                       <div className="flex items-center justify-between text-[12px] text-slate-500 tracking-[0.1em]">
                         <span>Completion</span>
                         <span className="font-semibold text-slate-700">
-                          {subject.completionPercentage.toFixed(1)}%
+                          {getDisplayedCompletionForSubject(subject).toFixed(1)}%
                         </span>
                       </div>
                       <Progress
-                        value={Math.min(Math.max(subject.completionPercentage, 0), 100)}
-                        className="h-2 rounded-full bg-slate-200"
+                        value={Math.min(
+                          Math.max(getDisplayedCompletionForSubject(subject), 0),
+                          100,
+                        )}
+                        indicatorClassName={
+                          getDisplayedCompletionForSubject(subject) > 0
+                            ? undefined
+                            : 'bg-slate-200'
+                        }
+                        className="h-2 rounded-full"
                       />
                     </div>
                     <div className="space-y-2">
@@ -411,4 +430,26 @@ function shouldShowMentorChatBadge(subject: PlanProgressSubject) {
     subject.attemptedQuestions > 0 &&
     subject.completionPercentage < 100
   );
+}
+
+function displayedOverallCompletion(
+  progress: PlanProgressResponse,
+  subjects: PlanProgressSubject[],
+) {
+  if (!progress?.stats?.totalQuestions) {
+    return 0;
+  }
+  return (
+    (progress.stats.completedQuestions / progress.stats.totalQuestions) * 100
+  );
+}
+
+function getDisplayedCompletionForSubject(subject: PlanProgressSubject) {
+  if (typeof subject.completionPercentage === 'number') {
+    return subject.completionPercentage;
+  }
+  if (subject.questionCount > 0) {
+    return (subject.completedQuestions / subject.questionCount) * 100;
+  }
+  return 0;
 }
